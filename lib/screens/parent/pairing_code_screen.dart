@@ -1,6 +1,6 @@
 // lib/screens/parent/pairing_code_screen.dart
-// Shows the generated 6-digit code. Listens in real-time for the child device
-// to submit the code. Auto-navigates to dashboard on success.
+// FIXED: digit boxes now use FittedBox + LayoutBuilder so they never overflow
+// on any screen size (small physical device or emulator).
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -40,7 +40,8 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
           if (!mounted) return;
           Navigator.pushAndRemoveUntil(
               context,
-              MaterialPageRoute(builder: (_) => const ParentDashboardScreen()),
+              MaterialPageRoute(
+                  builder: (_) => const ParentDashboardScreen()),
               (_) => false);
         });
       } else if (updated.isExpired) {
@@ -60,11 +61,11 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
         actions: [
           ElevatedButton(
             onPressed: () {
-              Navigator.pop(context); // close dialog
-              Navigator.pop(context); // back to AddChildScreen
+              Navigator.pop(context);
+              Navigator.pop(context);
             },
             child: const Text('Generate New Code'),
-          )
+          ),
         ],
       ),
     );
@@ -95,7 +96,8 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
   }
 
   void _copyCode() {
-    Clipboard.setData(ClipboardData(text: _link!.pairingCode));
+    final code = _link?.pairingCode ?? widget.link.pairingCode;
+    Clipboard.setData(ClipboardData(text: code));
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Code copied to clipboard'),
         behavior: SnackBarBehavior.floating,
@@ -126,9 +128,10 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
   // ── Code display ──────────────────────────────────────────────────────────
   Widget _buildCodeDisplay() {
     final code = _link?.pairingCode ?? widget.link.pairingCode;
+
     return Center(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
             width: 80, height: 80,
@@ -139,6 +142,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
                 size: 44, color: AppColors.primary),
           ),
           const SizedBox(height: 20),
+
           const Text('Enter this code on your child\'s device',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -156,7 +160,9 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
 
           // ── Code box ─────────────────────────────────────────────────────
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(
+                horizontal: 20, vertical: 24),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
@@ -164,7 +170,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
                 BoxShadow(
                     color: AppColors.primary.withOpacity(0.1),
                     blurRadius: 20,
-                    offset: const Offset(0, 6))
+                    offset: const Offset(0, 6)),
               ],
             ),
             child: Column(children: [
@@ -174,36 +180,50 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
                       letterSpacing: 2,
                       color: AppColors.textSub,
                       fontWeight: FontWeight.w600)),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
 
-              // Individual digit boxes
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(code.length, (i) {
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: 44, height: 54,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.07),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: AppColors.primary.withOpacity(0.2)),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(code[i],
-                        style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary)),
+              // ── FIXED: LayoutBuilder so digits never overflow ──────────
+              LayoutBuilder(
+                builder: (_, constraints) {
+                  // Available width ÷ 6 digits, minus margins between them
+                  final totalMargin = 6.0 * 2; // 6 gaps × margin per side
+                  final digitW = ((constraints.maxWidth - totalMargin * 6) / 6)
+                      .clamp(32.0, 52.0);
+                  final digitH = (digitW * 1.25).clamp(40.0, 64.0);
+                  final fontSize = (digitW * 0.55).clamp(18.0, 28.0);
+
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(code.length, (i) {
+                      return Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
+                        width: digitW,
+                        height: digitH,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.07),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: AppColors.primary.withOpacity(0.2)),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(code[i],
+                            style: TextStyle(
+                                fontSize: fontSize,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.primary)),
+                      );
+                    }),
                   );
-                }),
+                },
               ),
-              const SizedBox(height: 12),
+
+              const SizedBox(height: 14),
               TextButton.icon(
                 onPressed: _copyCode,
                 icon: const Icon(Icons.copy_outlined, size: 15),
                 label: const Text('Copy Code'),
-                style: TextButton.styleFrom(foregroundColor: AppColors.textSub),
+                style: TextButton.styleFrom(
+                    foregroundColor: AppColors.textSub),
               ),
             ]),
           ),

@@ -1,15 +1,20 @@
 // lib/screens/auth/splash_screen.dart
-// On launch:
-//  - Checks SharedPreferences for stored role
-//  - If role == 'parent'  and Firebase Auth session exists → ParentDashboard
-//  - If role == 'child'   and link_id stored              → ChildActiveScreen
-//  - Otherwise                                            → LoginScreen
+// ─────────────────────────────────────────────────────────────────────────────
+// FIXED: For child role, verifies Firestore link_status BEFORE routing.
+// If link_status is 'removed' or 'expired' — clears local storage and
+// routes to RegisterScreen instead of ChildActiveScreen.
+//
+// This handles the case where the child app was closed when unlinked —
+// on next launch it won't get stuck on the active screen.
+// ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../utils/app_theme.dart';
 import 'login_screen.dart';
+import 'register_screen.dart';
 import '../parent/dashboard_screen.dart';
 import '../child/child_active_screen.dart';
 
@@ -23,7 +28,7 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
-  late Animation<double> _fade;
+  late Animation<double>   _fade;
 
   @override
   void initState() {
@@ -37,16 +42,56 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _route() async {
     if (!mounted) return;
-    final prefs  = await SharedPreferences.getInstance();
-    final role   = prefs.getString('role');       // 'parent' | 'child' | null
-    final linkId = prefs.getString('link_id');    // set after child pairing
 
+    final prefs  = await SharedPreferences.getInstance();
+    final role   = prefs.getString('role');
+    final linkId = prefs.getString('link_id');
+
+    // ── Parent role ────────────────────────────────────────────────────────
     if (role == 'parent' && FirebaseAuth.instance.currentUser != null) {
       _go(const ParentDashboardScreen());
-    } else if (role == 'child' && linkId != null) {
-      _go(const ChildActiveScreen());
-    } else {
-      _go(const LoginScreen());
+      return;
+    }
+
+    // ── Child role ─────────────────────────────────────────────────────────
+    if (role == 'child' && linkId != null && linkId.isNotEmpty) {
+      // ✅ FIXED: Verify the link is still active in Firestore before routing.
+      // This catches the case where the child app was closed during unlinking.
+      final isStillLinked = await _verifyChildLink(linkId);
+
+      if (isStillLinked) {
+        _go(const ChildActiveScreen());
+      } else {
+        // Link was removed while app was closed — clear local data and
+        // send to RegisterScreen so child can pair again if needed.
+        await prefs.remove('role');
+        await prefs.remove('link_id');
+        _go(const RegisterScreen());
+      }
+      return;
+    }
+
+    // ── No valid session ───────────────────────────────────────────────────
+    _go(const LoginScreen());
+  }
+
+  // ── Check Firestore link_status ───────────────────────────────────────────
+  // Returns true only if document exists AND link_status == 'active'.
+  Future<bool> _verifyChildLink(String linkId) async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('parent_child_links')
+          .doc(linkId)
+          .get();
+
+      if (!doc.exists || doc.data() == null) return false;
+
+      final linkStatus = doc.data()!['link_status'] as String?;
+      return linkStatus == 'active';
+    } catch (_) {
+      // Network error — assume link is still valid to avoid logging
+      // the child out due to a temporary connectivity issue.
+      return true;
     }
   }
 
@@ -71,8 +116,7 @@ class _SplashScreenState extends State<SplashScreen>
         child: Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
-              width: 96,
-              height: 96,
+              width: 96, height: 96,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.15),
                 shape: BoxShape.circle,
@@ -90,7 +134,8 @@ class _SplashScreenState extends State<SplashScreen>
             const SizedBox(height: 6),
             Text('Smart Parental Control System',
                 style: TextStyle(
-                    color: Colors.white.withOpacity(0.75), fontSize: 13)),
+                    color: Colors.white.withOpacity(0.75),
+                    fontSize: 13)),
             const SizedBox(height: 48),
             const CircularProgressIndicator(
                 color: Colors.white, strokeWidth: 2),

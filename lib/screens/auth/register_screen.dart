@@ -26,6 +26,7 @@ import '../../utils/app_theme.dart';
 import 'login_screen.dart';
 import '../parent/dashboard_screen.dart';
 import '../child/child_active_screen.dart';
+import '../child/permission_setup_screen.dart';
 
 // ─── Which role the user picked ──────────────────────────────────────────────
 enum _Role { none, parent, child }
@@ -148,7 +149,7 @@ class _RegisterScreenState extends State<RegisterScreen>
       if (mounted) {
         Navigator.pushAndRemoveUntil(
             context,
-            MaterialPageRoute(builder: (_) => const ChildActiveScreen()),
+            MaterialPageRoute(builder: (_) => const PermissionSetupScreen()),
             (_) => false);
       }
     } catch (_) {
