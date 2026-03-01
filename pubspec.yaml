@@ -30,19 +30,32 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-    
+
   # Firebase
   firebase_core: ^2.27.0
   firebase_auth: ^4.17.0
   cloud_firestore: ^4.15.0
   firebase_messaging: ^14.7.19
+  firebase_storage: ^11.6.0
 
   # Device Info (for child device hardware collection on pairing)
   device_info_plus: ^10.1.0
 
+  # Image handling
+  image_picker: ^1.1.2
+  cached_network_image: ^3.3.1
+
+  # Permissions
+  permission_handler: ^11.3.1
+
+  # Charts
+  fl_chart: ^0.69.0
+
+
   # Utilities
   uuid: ^4.3.3
   shared_preferences: ^2.2.3   # store role + link_id after pairing
+  intl: ^0.19.0
 
   # UI
   pinput: ^3.0.1                # 6-digit pairing code input

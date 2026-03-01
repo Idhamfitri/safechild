@@ -3,15 +3,15 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const Color primary      = Color(0xFF1A7F64);
-  static const Color primaryDark  = Color(0xFF12614C);
-  static const Color accent       = Color(0xFF3ECFA0);
-  static const Color background   = Color(0xFFF5F9F7);
-  static const Color surface      = Color(0xFFFFFFFF);
-  static const Color error        = Color(0xFFD32F2F);
-  static const Color textPrimary  = Color(0xFF1C2B25);
-  static const Color textSub      = Color(0xFF6B7C74);
-  static const Color divider      = Color(0xFFDDE6E2);
+  static const Color primary       = Color(0xFF1A7F64);
+  static const Color primaryDark   = Color(0xFF12614C);
+  static const Color accent        = Color(0xFF3ECFA0);
+  static const Color background    = Color(0xFFF5F9F7);
+  static const Color surface       = Color(0xFFFFFFFF);
+  static const Color error         = Color(0xFFD32F2F);
+  static const Color textPrimary   = Color(0xFF1C2B25);
+  static const Color textSub       = Color(0xFF6B7C74);
+  static const Color divider       = Color(0xFFDDE6E2);
   static const Color statusPending = Color(0xFFF9A825);
   static const Color statusLinked  = Color(0xFF1A7F64);
   static const Color statusExpired = Color(0xFFD32F2F);
@@ -21,10 +21,10 @@ class AppTheme {
   static ThemeData get light => ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: AppColors.primary,
-          primary: AppColors.primary,
+          primary:   AppColors.primary,
           secondary: AppColors.accent,
-          error: AppColors.error,
-          surface: AppColors.surface,
+          error:     AppColors.error,
+          surface:   AppColors.surface,
         ),
         scaffoldBackgroundColor: AppColors.background,
         appBarTheme: const AppBarTheme(
@@ -39,12 +39,9 @@ class AppTheme {
             foregroundColor: Colors.white,
             minimumSize: const Size(double.infinity, 52),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+                borderRadius: BorderRadius.circular(12)),
             textStyle: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
+                fontSize: 16, fontWeight: FontWeight.w600),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
@@ -70,12 +67,12 @@ class AppTheme {
           ),
           labelStyle: const TextStyle(color: AppColors.textSub),
         ),
+        // ✅ CardThemeData — required in Flutter 3.27+
         cardTheme: CardThemeData(
           color: AppColors.surface,
           elevation: 2,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+              borderRadius: BorderRadius.circular(16)),
         ),
         useMaterial3: true,
       );

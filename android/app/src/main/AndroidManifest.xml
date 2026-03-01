@@ -1,10 +1,58 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest 
+xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:tools="http://schemas.android.com/tools">
+ <!-- ══════════════════════════════════════════════════════════
+         PERMISSIONS — Child Device
+         (Module reference from permission table in SRD report)
+         ══════════════════════════════════════════════════════════ -->
+
+
+    
     <uses-permission android:name="android.permission.INTERNET"/>
+    
+    <!-- Modules 2, 3 & 4 — Firebase, Firestore, FCM -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Module 4 — FCM, heartbeat network check -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Module 4 — Local notification display -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Modules 2, 3 & 4 — Keep monitoring service alive -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <!-- Modules 2, 3 & 4 — Restart service after device reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Module 3 — App usage stats (screen time tracking) -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- Module 3 — Show overlay / intervention screen over other apps -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Module 2 & 3 — Accessibility service (content reading for AI detection) -->
+    <!-- Declared in <application> block below, not here as a uses-permission -->
+
+    <!-- Module 3 — Device Administrator (prevent uninstall) -->
+    <!-- Declared as a DeviceAdminReceiver in <application> block below -->
+
+    <!-- Parent device only — vibrate on alert -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- Image picker — camera access for child photo upload -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
     <application
         android:label="safechild"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:requestLegacyExternalStorage="true"
+        tools:replace="android:label">
+        
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -27,6 +75,63 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- FCM — required for Firebase Cloud Messaging -->
+        <service
+            android:name="com.google.firebase.messaging.FirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+         <!-- ── Module 2 & 3: Accessibility Service (placeholder for Module 2/3) ──
+             Uncomment and implement when building Module 2/3.
+             The service class SafeChildAccessibilityService must be created
+             in android/app/src/main/kotlin/.../ -->
+        <!--
+        <service
+            android:name=".SafeChildAccessibilityService"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+        -->
+
+        <!-- ── Module 3: Device Admin Receiver (placeholder for Module 3) ──
+             Uncomment and implement SafeChildDeviceAdminReceiver in Kotlin
+             when building Module 3. -->
+        <!--
+        <receiver
+            android:name=".SafeChildDeviceAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_config" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+        -->
+
+        <!-- ── Boot receiver — restart services after device reboot ──
+             Uncomment when background services are implemented in Module 4. -->
+        <!--
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        -->
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -38,6 +143,7 @@
          https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

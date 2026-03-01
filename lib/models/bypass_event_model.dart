@@ -1,0 +1,156 @@
+// lib/models/bypass_event_model.dart
+// ─────────────────────────────────────────────────────────────────────────────
+// Maps to Firestore collection: bypass_events/{bypass_id}
+// Written instantly by the child device when a bypass attempt is detected.
+// Triggers immediate FCM notification to parent (Part 1, MODULE3_WORKFLOW).
+//
+// Schema (MODULE3_WORKFLOW Part 4):
+//   device_id         – which child device
+//   event_type        – "uninstall_attempt" | "settings_access" |
+//                       "permission_revoked" | "heartbeat_loss" | "safe_mode_boot"
+//   event_description – human-readable description
+//   is_blocked        – true if bypass was blocked, false if not (permission revoked)
+//   is_reviewed       – parent has viewed the alert
+//   is_alert_send     – FCM was sent to parent
+//   alert_send_at     – when FCM was sent
+//   detected_at       – when bypass was detected
+// ─────────────────────────────────────────────────────────────────────────────
+
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+enum BypassEventType {
+  uninstallAttempt,
+  settingsAccess,
+  permissionRevoked,
+  heartbeatLoss,
+  safeModeBoot,
+}
+
+extension BypassEventTypeX on BypassEventType {
+  String get firestoreValue {
+    switch (this) {
+      case BypassEventType.uninstallAttempt: return 'uninstall_attempt';
+      case BypassEventType.settingsAccess:   return 'settings_access';
+      case BypassEventType.permissionRevoked: return 'permission_revoked';
+      case BypassEventType.heartbeatLoss:    return 'heartbeat_loss';
+      case BypassEventType.safeModeBoot:     return 'safe_mode_boot';
+    }
+  }
+
+  String get displayLabel {
+    switch (this) {
+      case BypassEventType.uninstallAttempt: return 'Uninstall Attempt';
+      case BypassEventType.settingsAccess:   return 'Settings Access';
+      case BypassEventType.permissionRevoked: return 'Permission Revoked';
+      case BypassEventType.heartbeatLoss:    return 'Heartbeat Lost';
+      case BypassEventType.safeModeBoot:     return 'Safe Mode Detected';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case BypassEventType.uninstallAttempt: return Icons.delete_sweep_outlined;
+      case BypassEventType.settingsAccess:   return Icons.settings_outlined;
+      case BypassEventType.permissionRevoked: return Icons.no_encryption_outlined;
+      case BypassEventType.heartbeatLoss:    return Icons.heart_broken_outlined;
+      case BypassEventType.safeModeBoot:     return Icons.phonelink_off_outlined;
+    }
+  }
+
+  Color get color => const Color(0xFFD32F2F); // all bypass events are red
+}
+
+BypassEventType _typeFromString(String? s) {
+  switch (s) {
+    case 'uninstall_attempt':  return BypassEventType.uninstallAttempt;
+    case 'settings_access':    return BypassEventType.settingsAccess;
+    case 'permission_revoked': return BypassEventType.permissionRevoked;
+    case 'heartbeat_loss':     return BypassEventType.heartbeatLoss;
+    case 'safe_mode_boot':     return BypassEventType.safeModeBoot;
+    default:                   return BypassEventType.uninstallAttempt;
+  }
+}
+
+class BypassEventModel {
+  final String         bypassId;
+  final String         deviceId;
+  final BypassEventType eventType;
+  final String         eventDescription;
+  final bool           isBlocked;
+  final bool           isReviewed;
+  final bool           isAlertSend;
+  final DateTime?      alertSendAt;
+  final DateTime       detectedAt;
+
+  BypassEventModel({
+    required this.bypassId,
+    required this.deviceId,
+    required this.eventType,
+    required this.eventDescription,
+    required this.isBlocked,
+    required this.isReviewed,
+    required this.isAlertSend,
+    this.alertSendAt,
+    required this.detectedAt,
+  });
+
+  factory BypassEventModel.fromFirestore(
+      DocumentSnapshot<Map<String, dynamic>> doc) {
+    final d = doc.data()!;
+    return BypassEventModel(
+      bypassId:         doc.id,
+      deviceId:         d['device_id'] ?? '',
+      eventType:        _typeFromString(d['event_type']),
+      eventDescription: d['event_description'] ?? '',
+      isBlocked:        d['is_blocked']    ?? false,
+      isReviewed:       d['is_reviewed']   ?? false,
+      isAlertSend:      d['is_alert_send'] ?? false,
+      alertSendAt: d['alert_send_at'] != null
+          ? (d['alert_send_at'] as Timestamp).toDate()
+          : null,
+      detectedAt: (d['detected_at'] as Timestamp).toDate(),
+    );
+  }
+
+  Map<String, dynamic> toFirestore() => {
+        'device_id':         deviceId,
+        'event_type':        eventType.firestoreValue,
+        'event_description': eventDescription,
+        'is_blocked':        isBlocked,
+        'is_reviewed':       isReviewed,
+        'is_alert_send':     isAlertSend,
+        if (alertSendAt != null) 'alert_send_at': Timestamp.fromDate(alertSendAt!),
+        'detected_at':       Timestamp.fromDate(detectedAt),
+      };
+
+  // ── Dummy events (shown until Module 3 writes real bypass events) ──────────
+  static List<BypassEventModel> dummies(String deviceId) {
+    final now = DateTime.now();
+    return [
+      BypassEventModel(
+        bypassId: 'd1', deviceId: deviceId,
+        eventType: BypassEventType.uninstallAttempt,
+        eventDescription: 'Child attempted to uninstall SafeChild',
+        isBlocked: true, isReviewed: false, isAlertSend: true,
+        alertSendAt: now.subtract(const Duration(hours: 2, minutes: 35)),
+        detectedAt:  now.subtract(const Duration(hours: 2, minutes: 35)),
+      ),
+      BypassEventModel(
+        bypassId: 'd2', deviceId: deviceId,
+        eventType: BypassEventType.settingsAccess,
+        eventDescription: 'Child attempted to open Settings app',
+        isBlocked: true, isReviewed: false, isAlertSend: true,
+        alertSendAt: now.subtract(const Duration(hours: 4, minutes: 30)),
+        detectedAt:  now.subtract(const Duration(hours: 4, minutes: 30)),
+      ),
+      BypassEventModel(
+        bypassId: 'd3', deviceId: deviceId,
+        eventType: BypassEventType.permissionRevoked,
+        eventDescription: 'Accessibility Service was disabled by child',
+        isBlocked: false, isReviewed: true, isAlertSend: true,
+        detectedAt: now.subtract(const Duration(days: 1, hours: 3)),
+      ),
+    ];
+  }
+}

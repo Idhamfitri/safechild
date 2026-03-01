@@ -1,12 +1,7 @@
 // lib/services/pairing_service.dart
-// Handles the full pairing flow for BOTH roles in one service.
-//
-// PARENT side:
-//   createChildAndGeneratePairingCode() → creates CHILD_DEVICE + PARENT_CHILD_LINK
-//   watchLinkStatus()                   → real-time listener for pairing completion
-//
-// CHILD side:
-//   submitPairingCode()                 → matches code, updates device info, flips status to linked
+// UPDATED: createChildAndGeneratePairingCode now accepts optional deviceId
+// (so StorageService can upload the photo to the same ID before this is called)
+// and childImageUrl from Firebase Storage.
 
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -29,33 +24,37 @@ class PairingService {
   //  PARENT SIDE
   // ══════════════════════════════════════════════════════════════
 
-  /// Called when parent submits the "Add Child Device" form.
-  /// Returns the link document (which contains the pairing code to show on screen).
+  /// Creates CHILD_DEVICE + PARENT_CHILD_LINK.
+  /// [deviceId] can be pre-supplied (so storage upload uses same ID).
+  /// [childImageUrl] is the Firebase Storage URL from StorageService.
   Future<ParentChildLinkModel> createChildAndGeneratePairingCode({
     required String parentId,
     required String childFullName,
-    required int childAge,
+    required int    childAge,
     required String deviceName,
+    String? childImageUrl,
+    String? deviceId,           // ← NEW: pass the pre-generated ID
   }) async {
-    final code     = _generateCode();
-    final deviceId = _uuid.v4();
-    final linkId   = _uuid.v4();
+    final code = _generateCode();
+    final dId  = deviceId ?? _uuid.v4();
+    final linkId = _uuid.v4();
 
-    // 1. Create CHILD_DEVICE document (hardware fields null until child pairs)
+    // 1. Create CHILD_DEVICE document
     final device = ChildDeviceModel(
-      deviceId: deviceId,
+      deviceId: dId,
       deviceName: deviceName,
       age: childAge,
       fullName: childFullName,
       dateCreated: DateTime.now(),
+      image: childImageUrl,
     );
-    await _devices.doc(deviceId).set(device.toFirestore());
+    await _devices.doc(dId).set(device.toFirestore());
 
-    // 2. Create PARENT_CHILD_LINK with the pairing code
+    // 2. Create PARENT_CHILD_LINK with pairing code
     final link = ParentChildLinkModel(
       pCLinkId: linkId,
       parentId: parentId,
-      deviceId: deviceId,
+      deviceId: dId,
       pairingCode: code,
       pairingStatus: PairingStatus.pending,
       linkStatus: LinkStatus.active,
@@ -65,18 +64,17 @@ class PairingService {
     return link;
   }
 
-  /// Real-time listener — parent app watches this to detect when child links.
+  /// Real-time listener — parent watches for pairing_status → linked.
   Stream<ParentChildLinkModel> watchLinkStatus(String linkId) =>
       _links.doc(linkId).snapshots().map(ParentChildLinkModel.fromFirestore);
 
-  /// Fetch all active linked devices for the dashboard.
+  /// Stream all active links for a parent (for dashboard).
   Stream<List<ParentChildLinkModel>> watchLinkedDevices(String parentId) =>
       _links
           .where('parent_id', isEqualTo: parentId)
           .where('link_status', isEqualTo: 'active')
           .snapshots()
-          .map((s) =>
-              s.docs.map(ParentChildLinkModel.fromFirestore).toList());
+          .map((s) => s.docs.map(ParentChildLinkModel.fromFirestore).toList());
 
   Future<ChildDeviceModel?> getChildDevice(String deviceId) async {
     final doc = await _devices.doc(deviceId).get();
@@ -93,11 +91,11 @@ class PairingService {
   //  CHILD SIDE
   // ══════════════════════════════════════════════════════════════
 
-  /// Called when the child role user enters the 6-digit code.
-  /// Returns null on success, or an error message string on failure.
+  /// Matches the 6-digit code, updates CHILD_DEVICE hardware info,
+  /// flips PARENT_CHILD_LINK to linked.
+  /// Returns null on success, error string on failure.
   Future<String?> submitPairingCode(String code) async {
     try {
-      // 1. Find a matching pending link
       final snap = await _links
           .where('pairing_code', isEqualTo: code.trim())
           .where('pairing_status', isEqualTo: 'pending')
@@ -110,18 +108,16 @@ class PairingService {
       }
 
       final linkDoc  = snap.docs.first;
-      final linkData = linkDoc.data();
-      final deviceId = linkData['device_id'] as String?;
+      final deviceId = linkDoc.data()['device_id'] as String?;
 
       if (deviceId == null || deviceId.isEmpty) {
         return 'Setup error. Please ask the parent to generate a new code.';
       }
 
-      // 2. Collect device hardware info
       final info     = await _getDeviceInfo();
       final fcmToken = await _getFcmToken();
 
-      // 3. Update CHILD_DEVICE with hardware info
+      // Update CHILD_DEVICE with hardware info
       await _devices.doc(deviceId).update({
         'device_model': info['model'],
         'android_version': info['version'],
@@ -129,21 +125,20 @@ class PairingService {
         'last_sync': Timestamp.now(),
       });
 
-      // 4. Flip PARENT_CHILD_LINK to linked
+      // Flip PARENT_CHILD_LINK to linked
       await _links.doc(linkDoc.id).update({
         'pairing_status': 'linked',
         'linked_at': Timestamp.now(),
       });
 
-      // Return the link_id so the child app can store it locally
-      return null; // null = success
+      return null; // success
 
     } catch (e) {
       return 'Pairing failed. Please try again. ($e)';
     }
   }
 
-  /// After successful pairing, child app needs the link_id for local storage.
+  /// Returns the link_id for a given code (used to store locally after pairing).
   Future<String?> getLinkIdByCode(String code) async {
     final snap = await _links
         .where('pairing_code', isEqualTo: code.trim())
@@ -153,7 +148,6 @@ class PairingService {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-
   String _generateCode() {
     final n = Random.secure().nextInt(1000000);
     return n.toString().padLeft(6, '0');
@@ -161,10 +155,9 @@ class PairingService {
 
   Future<Map<String, String>> _getDeviceInfo() async {
     try {
-      final plugin = DeviceInfoPlugin();
-      final android = await plugin.androidInfo;
+      final android = await DeviceInfoPlugin().androidInfo;
       return {
-        'model': '${android.manufacturer} ${android.model}',
+        'model':   '${android.manufacturer} ${android.model}',
         'version': android.version.release,
       };
     } catch (_) {
@@ -173,10 +166,7 @@ class PairingService {
   }
 
   Future<String?> _getFcmToken() async {
-    try {
-      return await FirebaseMessaging.instance.getToken();
-    } catch (_) {
-      return null;
-    }
+    try { return await FirebaseMessaging.instance.getToken(); }
+    catch (_) { return null; }
   }
 }
