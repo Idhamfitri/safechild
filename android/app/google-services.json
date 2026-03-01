@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "554462068343",
+    "project_id": "safechild72",
+    "storage_bucket": "safechild72.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:554462068343:android:e8c426948be0c9ff0c1072",
+        "android_client_info": {
+          "package_name": "com.safechild.safechild"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0lzu02y8ksS0ch2O0-mQZFMt_JqWYj1U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
