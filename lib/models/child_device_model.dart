@@ -1,155 +1,147 @@
 // lib/models/child_device_model.dart
-// UPDATED: Added manufacturer, androidSdk, permissionStatus fields.
-// permission_status map is written by child device during/after permission setup.
-// Parent dashboard reads this in real-time to show protection status.
-
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// ─── Permission status snapshot ───────────────────────────────────────────────
-class DevicePermissionStatus {
-  final bool notifications;
-  final bool overlay;
-  final bool usageAccess;
-  final bool accessibility;
-  final bool deviceAdmin;
+class PermissionStatus {
+  final bool      accessibility;
+  final bool      deviceAdmin;
+  final bool      notifications;
+  final bool      overlay;
+  final bool      usageAccess;
   final DateTime? lastUpdated;
 
-  const DevicePermissionStatus({
+  PermissionStatus({
+    this.accessibility = false,
+    this.deviceAdmin   = false,
     this.notifications = false,
     this.overlay       = false,
     this.usageAccess   = false,
-    this.accessibility = false,
-    this.deviceAdmin   = false,
     this.lastUpdated,
   });
 
-  factory DevicePermissionStatus.fromMap(Map<String, dynamic> m) =>
-      DevicePermissionStatus(
-        notifications: m['notifications'] as bool? ?? false,
-        overlay:       m['overlay']       as bool? ?? false,
-        usageAccess:   m['usage_access']  as bool? ?? false,
-        accessibility: m['accessibility'] as bool? ?? false,
-        deviceAdmin:   m['device_admin']  as bool? ?? false,
-        lastUpdated:   m['last_updated'] != null
-            ? (m['last_updated'] as Timestamp).toDate()
-            : null,
-      );
+  factory PermissionStatus.fromMap(Map<String, dynamic> map) {
+    return PermissionStatus(
+      accessibility: map['accessibility'] ?? false,
+      deviceAdmin:   map['device_admin']  ?? false,
+      notifications: map['notifications'] ?? false,
+      overlay:       map['overlay']       ?? false,
+      usageAccess:   map['usage_access']  ?? false,
+      lastUpdated: map['last_updated'] != null
+          ? (map['last_updated'] as Timestamp).toDate()
+          : null,
+    );
+  }
 
   Map<String, dynamic> toMap() => {
-        'notifications': notifications,
-        'overlay':       overlay,
-        'usage_access':  usageAccess,
-        'accessibility': accessibility,
-        'device_admin':  deviceAdmin,
-        'last_updated':  Timestamp.now(),
+        'accessibility':  accessibility,
+        'device_admin':   deviceAdmin,
+        'notifications':  notifications,
+        'overlay':        overlay,
+        'usage_access':   usageAccess,
+        if (lastUpdated != null)
+          'last_updated': Timestamp.fromDate(lastUpdated!),
       };
-
-  // How many permissions are granted
-  int get grantedCount => [
-    notifications, overlay, usageAccess, accessibility, deviceAdmin,
-  ].where((b) => b).length;
-
-  int get totalCount => 5;
-
-  bool get allGranted => grantedCount == totalCount;
-
-  static DevicePermissionStatus get none => const DevicePermissionStatus();
 }
 
-// ─── Child device model ───────────────────────────────────────────────────────
 class ChildDeviceModel {
-  final String   deviceId;
-  final String   deviceName;
-  final String?  deviceModel;       // e.g. "Pixel 7 Pro"
-  final String?  manufacturer;      // e.g. "Google"
-  final String?  androidVersion;    // e.g. "14"
-  final int?     androidSdk;        // e.g. 34
-  final String?  registrationToken;
-  final int      age;
-  final String   fullName;
-  final DateTime dateCreated;
-  final DateTime? lastSync;
-  final String?  image;
-  final DevicePermissionStatus permissionStatus;
-  final bool     setupComplete;
+  final String           deviceId;
+  final String           deviceName;
+  final String           fullName;
+  final int              age;
+  final String           deviceModel;
+  final String           manufacturer;
+  final String           androidVersion;
+  // android_sdk removed
+  final DateTime         dateCreated;
+  final DateTime?        lastSync;
+  final String?          registrationToken; // kept in model for FCM — not displayed in UI
+  final bool             setupComplete;
+  final PermissionStatus permissionStatus;
+  final String?          imageUrl;
+
+  // Infused from heartbeat — updated by child_active_screen every 10 min
+  final int?     batteryLevel;
+  final String   signalStatus;
+  final bool     safechidRunning;
+  final DateTime? lastSeen;
 
   ChildDeviceModel({
     required this.deviceId,
     required this.deviceName,
-    this.deviceModel,
-    this.manufacturer,
-    this.androidVersion,
-    this.androidSdk,
-    this.registrationToken,
-    required this.age,
     required this.fullName,
+    required this.age,
+    required this.deviceModel,
+    required this.manufacturer,
+    required this.androidVersion,
     required this.dateCreated,
     this.lastSync,
-    this.image,
-    this.permissionStatus = const DevicePermissionStatus(),
-    this.setupComplete    = false,
+    this.registrationToken,
+    this.setupComplete      = false,
+    required this.permissionStatus,
+    this.imageUrl,
+    this.batteryLevel,
+    this.signalStatus       = 'lost',
+    this.safechidRunning    = false,
+    this.lastSeen,
   });
 
   factory ChildDeviceModel.fromFirestore(
       DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data()!;
     return ChildDeviceModel(
-      deviceId:      doc.id,
-      deviceName:    d['device_name']       ?? '',
-      deviceModel:   d['device_model'],
-      manufacturer:  d['manufacturer'],
-      androidVersion: d['android_version'],
-      androidSdk:    d['android_sdk']       as int?,
-      registrationToken: d['registration_token'],
-      age:           d['age']               ?? 0,
-      fullName:      d['full_name']         ?? '',
-      dateCreated:   (d['date_created'] as Timestamp).toDate(),
-      lastSync:      d['last_sync'] != null
+      deviceId:       doc.id,
+      deviceName:     d['device_name']     ?? '',
+      fullName:       d['full_name']        ?? '',
+      age:            (d['age'] as num?)?.toInt() ?? 0,
+      deviceModel:    d['device_model']     ?? '',
+      manufacturer:   d['manufacturer']    ?? '',
+      androidVersion: d['android_version'] ?? '',
+      // android_sdk intentionally not read
+      dateCreated:    (d['date_created'] as Timestamp).toDate(),
+      lastSync: d['last_sync'] != null
           ? (d['last_sync'] as Timestamp).toDate()
           : null,
-      image:         d['image'],
+      registrationToken: d['registration_token'],
+      setupComplete:     d['setup_complete'] ?? false,
       permissionStatus: d['permission_status'] != null
-          ? DevicePermissionStatus.fromMap(
+          ? PermissionStatus.fromMap(
               Map<String, dynamic>.from(d['permission_status']))
-          : const DevicePermissionStatus(),
-      setupComplete: d['setup_complete'] as bool? ?? false,
+          : PermissionStatus(),
+      imageUrl:        d['image_url'],
+      batteryLevel:    (d['battery_level'] as num?)?.toInt(),
+      signalStatus:    d['signal_status']     ?? 'lost',
+      safechidRunning: d['safechild_running'] ?? false,
+      lastSeen: d['last_seen'] != null
+          ? (d['last_seen'] as Timestamp).toDate()
+          : null,
     );
   }
 
-  Map<String, dynamic> toFirestore() => {
-        'device_name':     deviceName,
-        if (deviceModel   != null) 'device_model':   deviceModel,
-        if (manufacturer  != null) 'manufacturer':   manufacturer,
-        if (androidVersion != null) 'android_version': androidVersion,
-        if (androidSdk    != null) 'android_sdk':    androidSdk,
-        if (registrationToken != null) 'registration_token': registrationToken,
-        'age':             age,
-        'full_name':       fullName,
-        'date_created':    Timestamp.fromDate(dateCreated),
-        if (lastSync != null) 'last_sync': Timestamp.fromDate(lastSync!),
-        if (image    != null) 'image':     image,
-        'permission_status': permissionStatus.toMap(),
-        'setup_complete':  setupComplete,
-      };
+  bool get isOnline => signalStatus == 'active';
 
-  // Human-readable device info line
-  String get deviceInfoLine {
-    final parts = <String>[];
-    if (manufacturer != null && manufacturer!.isNotEmpty) parts.add(manufacturer!);
-    if (deviceModel != null && deviceModel!.isNotEmpty) {
-      // Avoid duplicating manufacturer if already in model string
-      final model = deviceModel!;
-      final m = manufacturer ?? '';
-      parts.add(model.startsWith(m) && m.isNotEmpty
-          ? model.substring(m.length).trim()
-          : model);
-    }
-    return parts.isNotEmpty ? parts.join(' ') : 'Unknown Device';
+  String get lastSeenLabel {
+    final ref = lastSeen ?? lastSync;
+    if (ref == null) return 'Never';
+    final diff = DateTime.now().difference(ref);
+    if (diff.inSeconds < 60)  return 'Just now';
+    if (diff.inMinutes < 60)  return '${diff.inMinutes}m ago';
+    if (diff.inHours   < 24)  return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
   }
 
-  String get androidLabel =>
-      androidVersion != null ? 'Android $androidVersion' : 'Android —';
+  IconData get batteryIcon {
+    if (batteryLevel == null) return Icons.battery_unknown;
+    if (batteryLevel! >= 80)  return Icons.battery_full;
+    if (batteryLevel! >= 60)  return Icons.battery_5_bar;
+    if (batteryLevel! >= 40)  return Icons.battery_3_bar;
+    if (batteryLevel! >= 20)  return Icons.battery_2_bar;
+    return Icons.battery_alert;
+  }
 
-  bool get isPaired =>
-      deviceModel != null && registrationToken != null;
+  Color get batteryColor {
+    if (batteryLevel == null) return const Color(0xFF757575);
+    if (batteryLevel! >= 40)  return const Color(0xFF2E7D32);
+    if (batteryLevel! >= 20)  return const Color(0xFFE65100);
+    return const Color(0xFFC62828);
+  }
 }

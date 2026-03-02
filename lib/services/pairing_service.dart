@@ -37,15 +37,17 @@ class PairingService {
     final dId    = deviceId ?? _uuid.v4();
     final linkId = _uuid.v4();
 
-    final device = ChildDeviceModel(
-      deviceId:    dId,
-      deviceName:  deviceName,
-      age:         childAge,
-      fullName:    childFullName,
-      dateCreated: DateTime.now(),
-      image:       childImageUrl,
-    );
-    await _devices.doc(dId).set(device.toFirestore());
+    // Write the initial child_devices doc directly — avoids constructing
+    // ChildDeviceModel with all required hardware fields we don't have yet.
+    await _devices.doc(dId).set({
+      'device_name':       deviceName,
+      'full_name':         childFullName,
+      'age':               childAge,
+      'date_created':      Timestamp.now(),
+      if (childImageUrl != null) 'image_url': childImageUrl,
+      'setup_complete':    false,
+      'permission_status': PermissionStatus().toMap(),
+    });
 
     final link = ParentChildLinkModel(
       pCLinkId:      linkId,
@@ -125,11 +127,10 @@ class PairingService {
         'device_model':    info['model'],
         'manufacturer':    info['manufacturer'],
         'android_version': info['version'],
-        'android_sdk':     info['sdk'],
         if (fcmToken != null) 'registration_token': fcmToken,
         'last_sync':       Timestamp.now(),
         // Initialise permission_status map (all false until granted)
-        'permission_status': DevicePermissionStatus.none.toMap(),
+        'permission_status': PermissionStatus().toMap(),
         'setup_complete': false,
       });
 
@@ -172,12 +173,12 @@ class PairingService {
   Future<void> markSetupComplete({
     required String linkId,
     required String deviceId,
-    required DevicePermissionStatus finalStatus,
+    required PermissionStatus finalStatus,
   }) async {
     await Future.wait([
       _links.doc(linkId).update({
         'setup_phase': 'active',
-        'setup_step':  5,           // all 5 steps done
+        'setup_step':  4,           // all 4 steps done (device admin in Module 4)
       }),
       _devices.doc(deviceId).update({
         'permission_status': finalStatus.toMap(),
@@ -233,4 +234,71 @@ class PairingService {
     if (snap.docs.isEmpty) return null;
     return snap.docs.first.data()['device_id'] as String?;
   }
+
+  Future<void> unlinkAndDeleteAll({
+  required String linkId,
+  required String deviceId,
+  }) async {
+  // Firestore batch — max 500 ops per batch, use multiple if needed
+  WriteBatch batch1 = _db.batch();
+  WriteBatch batch2 = _db.batch();
+  int batch2Count = 0;
+
+  // ── 1. Delete parent_child_links document ─────────────────────────────
+  batch1.delete(_db.collection('parent_child_links').doc(linkId));
+
+  // ── 2. Delete child_devices document ─────────────────────────────────
+  batch1.delete(_db.collection('child_devices').doc(deviceId));
+
+  // ── 3. Delete heartbeat document (doc ID = deviceId) ──────────────────
+  batch1.delete(_db.collection('heartbeat').doc(deviceId));
+
+  // ── 4. Delete monitoring_setting for this link ────────────────────────
+  final monitorSnap = await _db
+      .collection('monitoring_setting')
+      .where('link_id', isEqualTo: linkId)
+      .get();
+  for (final doc in monitorSnap.docs) {
+    batch1.delete(doc.reference);
+  }
+
+  // ── 5. Delete incidents for this device ───────────────────────────────
+  final incidentsSnap = await _db
+      .collection('incidents')
+      .where('device_id', isEqualTo: deviceId)
+      .get();
+  for (final doc in incidentsSnap.docs) {
+    if (batch2Count < 490) {
+      batch2.delete(doc.reference);
+      batch2Count++;
+    }
+  }
+
+  // ── 6. Delete bypass_events for this device ────────────────────────────
+  final bypassSnap = await _db
+      .collection('bypass_events')
+      .where('device_id', isEqualTo: deviceId)
+      .get();
+  for (final doc in bypassSnap.docs) {
+    if (batch2Count < 490) {
+      batch2.delete(doc.reference);
+      batch2Count++;
+    }
+  }
+
+  // ── 7. Delete app_usage for this device ───────────────────────────────
+  final appUsageSnap = await _db
+      .collection('app_usage')
+      .where('device_id', isEqualTo: deviceId)
+      .get();
+  for (final doc in appUsageSnap.docs) {
+    if (batch2Count < 490) {
+      batch2.delete(doc.reference);
+      batch2Count++;
+    }
+  }
+  // ── Commit both batches ────────────────────────────────────────────────
+  await batch1.commit();
+  if (batch2Count > 0) await batch2.commit();
+ }
 }

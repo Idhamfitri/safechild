@@ -1,10 +1,11 @@
 // lib/screens/child/permission_setup_screen.dart
 // Simple permission setup wizard.
-// Each step: Allow button (opens settings) + Skip for now button — always visible.
-// No forced verification checks. Parent/child decides.
-// After all 5 steps actioned (granted or skipped) → ChildActiveScreen.
+// Each step: Allow button (opens correct settings page) + Skip for now button.
+// Device Admin step commented out — will be re-enabled in Module 4.
+// Uses android_intent_plus to navigate to exact system settings pages.
 
 import 'dart:async';
+import 'package:android_intent_plus/android_intent.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -27,9 +28,17 @@ class _PermStep {
   });
 }
 
-enum _PermType { notification, systemAlertWindow, usageAccess, accessibility, deviceAdmin }
+enum _PermType {
+  notification,
+  systemAlertWindow,
+  usageAccess,
+  accessibility,
+  // deviceAdmin,   // commented out — re-enable in Module 4
+}
+
 enum _StepStatus { idle, granted, skipped }
 
+// Device Admin step removed from list — commented out until Module 4
 const _steps = [
   _PermStep(
     icon: Icons.notifications_active_outlined, title: 'Notifications',
@@ -55,12 +64,14 @@ const _steps = [
     reason: 'Allows SafeChild to read on-screen text for AI content analysis.',
     type: _PermType.accessibility, firestoreKey: 'accessibility',
   ),
-  _PermStep(
-    icon: Icons.admin_panel_settings_outlined, title: 'Device Administrator',
-    subtitle: 'Module 3 — Anti-Bypass',
-    reason: 'Prevents SafeChild from being uninstalled without parent approval.',
-    type: _PermType.deviceAdmin, firestoreKey: 'device_admin',
-  ),
+
+  // ── Device Admin — commented out until Module 4 ───────────────────────
+  // _PermStep(
+  //   icon: Icons.admin_panel_settings_outlined, title: 'Device Administrator',
+  //   subtitle: 'Module 4 — Anti-Bypass',
+  //   reason: 'Prevents SafeChild from being uninstalled without parent approval.',
+  //   type: _PermType.deviceAdmin, firestoreKey: 'device_admin',
+  // ),
 ];
 
 class PermissionSetupScreen extends StatefulWidget {
@@ -77,7 +88,9 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
   String? _deviceId;
   int  _current = 0;
   bool _loading = false;
-  final _status = List<_StepStatus>.filled(5, _StepStatus.idle);
+
+  // Only 4 steps now — device admin removed
+  final _status = List<_StepStatus>.filled(4, _StepStatus.idle);
 
   @override
   void initState() {
@@ -128,17 +141,51 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
     super.dispose();
   }
 
+  // ── Open correct settings page per permission type ─────────────────────
   Future<void> _grant() async {
     setState(() => _loading = true);
     try {
       switch (_steps[_current].type) {
+
         case _PermType.notification:
+          // Use permission_handler for notifications — works directly
           await Permission.notification.request();
           break;
-        default:
-          await openAppSettings();
+
+        case _PermType.systemAlertWindow:
+          // Opens "Display over other apps" settings
+          const AndroidIntent(
+            action: 'android.settings.action.MANAGE_OVERLAY_PERMISSION',
+          ).launch();
           break;
+
+        case _PermType.usageAccess:
+          // Opens "Usage Access" settings
+          const AndroidIntent(
+            action: 'android.settings.USAGE_ACCESS_SETTINGS',
+          ).launch();
+          break;
+
+        case _PermType.accessibility:
+          // Opens system Accessibility settings
+          // On Xiaomi: Additional Settings → Accessibility → Installed Apps → SafeChild
+          // android_intent_plus routes correctly on all Android including Xiaomi
+          const AndroidIntent(
+            action: 'android.settings.ACCESSIBILITY_SETTINGS',
+          ).launch();
+          break;
+
+        // ── Device Admin — commented out until Module 4 ─────────────────
+        // case _PermType.deviceAdmin:
+        //   const AndroidIntent(
+        //     action: 'android.app.action.ADD_DEVICE_ADMIN',
+        //   ).launch();
+        //   break;
       }
+      _apply(_StepStatus.granted);
+    } catch (_) {
+      // If intent fails for any reason fall back to app settings
+      await openAppSettings();
       _apply(_StepStatus.granted);
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -149,7 +196,7 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
 
   void _apply(_StepStatus s) {
     setState(() => _status[_current] = s);
-    if (s == _StepStatus.granted && _linkId != null && _deviceId != null) {
+    if (_linkId != null && _deviceId != null) {
       _pairingService.updatePermissionGranted(
         linkId:        _linkId!,
         deviceId:      _deviceId!,
@@ -185,7 +232,7 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
       body: SafeArea(
         child: Column(children: [
 
-          // Progress header
+          // ── Progress header ───────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
             child: Column(children: [
@@ -193,11 +240,14 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
                 const Icon(Icons.shield, color: AppColors.primary, size: 22),
                 const SizedBox(width: 8),
                 const Text('SafeChild Setup',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700,
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.textPrimary)),
                 const Spacer(),
                 Text('${_current + 1} of $total',
-                    style: const TextStyle(fontSize: 13, color: AppColors.textSub)),
+                    style: const TextStyle(
+                        fontSize: 13, color: AppColors.textSub)),
               ]),
               const SizedBox(height: 12),
               ClipRRect(
@@ -206,7 +256,8 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
                   value: (_current + 1) / total,
                   minHeight: 6,
                   backgroundColor: AppColors.divider,
-                  valueColor: const AlwaysStoppedAnimation(AppColors.primary),
+                  valueColor:
+                      const AlwaysStoppedAnimation(AppColors.primary),
                 ),
               ),
               const SizedBox(height: 10),
@@ -217,12 +268,16 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
                   final active = i == _current;
                   return AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    width: active ? 20 : 8, height: 8,
+                    width: active ? 20 : 8,
+                    height: 8,
                     margin: const EdgeInsets.symmetric(horizontal: 3),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(4),
-                      color: done ? AppColors.statusLinked
-                          : active ? AppColors.primary : AppColors.divider,
+                      color: done
+                          ? AppColors.statusLinked
+                          : active
+                              ? AppColors.primary
+                              : AppColors.divider,
                     ),
                   );
                 }),
@@ -230,13 +285,13 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
             ]),
           ),
 
-          // Step content
+          // ── Step content ──────────────────────────────────────────────
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
               child: Column(children: [
 
-                // Icon
+                // Icon circle
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 250),
                   child: Container(
@@ -249,39 +304,50 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      status == _StepStatus.granted ? Icons.check_circle : step.icon,
+                      status == _StepStatus.granted
+                          ? Icons.check_circle
+                          : step.icon,
                       size: 50,
                       color: status == _StepStatus.granted
-                          ? AppColors.statusLinked : AppColors.primary,
+                          ? AppColors.statusLinked
+                          : AppColors.primary,
                     ),
                   ),
                 ),
                 const SizedBox(height: 22),
 
+                // Title
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 200),
                   child: Text(
                     key: ValueKey('t$_current'),
                     step.title,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
+                    style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
                         color: AppColors.textPrimary),
                   ),
                 ),
                 const SizedBox(height: 6),
 
+                // Subtitle badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 4),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(step.subtitle,
-                      style: const TextStyle(fontSize: 11,
-                          color: AppColors.primary, fontWeight: FontWeight.w600)),
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600)),
                 ),
                 const SizedBox(height: 20),
 
+                // Reason box
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -289,16 +355,51 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: AppColors.divider),
                   ),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Icon(Icons.info_outline, size: 16, color: AppColors.primary),
+                  child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    const Icon(Icons.info_outline,
+                        size: 16, color: AppColors.primary),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(step.reason,
-                          style: const TextStyle(fontSize: 13,
-                              color: AppColors.textSub, height: 1.55)),
+                          style: const TextStyle(
+                              fontSize: 13,
+                              color: AppColors.textSub,
+                              height: 1.55)),
                     ),
                   ]),
                 ),
+
+                // Accessibility extra hint — shown only on accessibility step
+                if (step.type == _PermType.accessibility) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFFCC02)),
+                    ),
+                    child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Icon(Icons.lightbulb_outline,
+                          size: 16, color: Color(0xFFE65100)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'After tapping Allow, find SafeChild in the '
+                          'Installed Apps list and toggle it ON.',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFE65100),
+                              height: 1.5),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ],
 
                 const SizedBox(height: 16),
 
@@ -306,42 +407,63 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
                 if (status == _StepStatus.granted)
                   _chip(Icons.check_circle, 'Granted', AppColors.statusLinked)
                 else if (status == _StepStatus.skipped)
-                  _chip(Icons.skip_next, 'Skipped', AppColors.statusPending),
+                  _chip(
+                      Icons.skip_next, 'Skipped', AppColors.statusPending),
               ]),
             ),
           ),
 
-          // Action buttons
+          // ── Action buttons ────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
             child: Column(children: [
 
               if (!_isDone) ...[
-                // Allow button
-                ElevatedButton(
-                  onPressed: _loading ? null : _grant,
-                  child: _loading
-                      ? const SizedBox(width: 20, height: 20,
-                          child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
-                      : Text('Allow ${step.title}'),
+                // Allow / Go to Settings button
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _loading ? null : _grant,
+                    style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(0, 50)),
+                    child: _loading
+                        ? const SizedBox(
+                            width: 20, height: 20,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2))
+                        : Row(mainAxisSize: MainAxisSize.min, children: [
+                            const Icon(Icons.settings_outlined, size: 16),
+                            const SizedBox(width: 8),
+                            Text('Allow ${step.title}'),
+                          ]),
+                  ),
                 ),
                 const SizedBox(height: 10),
                 // Skip always visible
-                TextButton(
-                  onPressed: _skip,
-                  child: const Text('Skip for now',
-                      style: TextStyle(color: AppColors.textSub)),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: _skip,
+                    child: const Text('Skip for now',
+                        style: TextStyle(color: AppColors.textSub)),
+                  ),
                 ),
               ] else ...[
-                // Next / Finish after actioned
-                ElevatedButton(
-                  onPressed: _next,
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(isLast ? 'Start Monitoring' : 'Next'),
-                    const SizedBox(width: 6),
-                    Icon(isLast ? Icons.shield : Icons.arrow_forward, size: 16),
-                  ]),
+                // Next / Finish
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _next,
+                    style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(0, 50)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Text(isLast ? 'Start Monitoring' : 'Next'),
+                      const SizedBox(width: 6),
+                      Icon(
+                          isLast ? Icons.shield : Icons.arrow_forward,
+                          size: 16),
+                    ]),
+                  ),
                 ),
               ],
 
@@ -354,7 +476,8 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
   }
 
   Widget _chip(IconData icon, String label, Color color) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(20),
@@ -363,8 +486,11 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon, size: 14, color: color),
           const SizedBox(width: 6),
-          Text(label, style: TextStyle(fontSize: 12, color: color,
-              fontWeight: FontWeight.w600)),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: color,
+                  fontWeight: FontWeight.w600)),
         ]),
       );
 }

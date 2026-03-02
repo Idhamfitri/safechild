@@ -44,6 +44,8 @@ dependencies:
   # Battery level — heartbeat
   battery_plus: ^6.0.1
 
+  android_intent_plus: ^4.0.0
+
 
   # Background service (foreground service + heartbeat timer)
   flutter_background_service: ^5.0.5

@@ -1,6 +1,6 @@
 // lib/services/heartbeat_service.dart
-// READ side — parent dashboard watches latest heartbeat written by child device.
-// The WRITE side is in child_active_screen.dart (timer every 10 minutes).
+// READ side only — parent dashboard watches the single heartbeat doc per device.
+// Document ID = device_id (upsert pattern — one doc per device, updated not created)
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/heartbeat_model.dart';
@@ -11,26 +11,11 @@ class HeartbeatService {
   CollectionReference<Map<String, dynamic>> get _col =>
       _db.collection('heartbeat');
 
-  // Real-time stream — fires whenever child writes a new heartbeat doc
-  Stream<HeartbeatModel> watchLatestHeartbeat(String deviceId) {
-    return _col
-        .where('device_id', isEqualTo: deviceId)
-        .orderBy('timestamp', descending: true)
-        .limit(1)
-        .snapshots()
-        .map((snap) {
-      if (snap.docs.isEmpty) return HeartbeatModel.dummy(deviceId);
-      return HeartbeatModel.fromFirestore(snap.docs.first);
+  // Real-time stream — fires whenever child updates its heartbeat doc
+  Stream<HeartbeatModel> watchHeartbeat(String deviceId) {
+    return _col.doc(deviceId).snapshots().map((snap) {
+      if (!snap.exists) return HeartbeatModel.empty(deviceId);
+      return HeartbeatModel.fromFirestore(snap);
     });
-  }
-
-  Future<HeartbeatModel> getLatestHeartbeat(String deviceId) async {
-    final snap = await _col
-        .where('device_id', isEqualTo: deviceId)
-        .orderBy('timestamp', descending: true)
-        .limit(1)
-        .get();
-    if (snap.docs.isEmpty) return HeartbeatModel.dummy(deviceId);
-    return HeartbeatModel.fromFirestore(snap.docs.first);
   }
 }

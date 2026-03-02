@@ -27,6 +27,7 @@ class ParentDashboardScreen extends StatefulWidget {
 }
 
 class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
+  
   final _pairingService   = PairingService();
   final _parentService    = ParentService();
   final _authService      = AuthService();
@@ -71,25 +72,68 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
   }
 
   Future<void> _unlinkDevice(ParentChildLinkModel link) async {
-    final confirmed = await showDialog<bool>(
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text('Remove Device'),
+      content: const Text(
+        'This will permanently remove this device and delete all '
+        'associated data including incidents, heartbeat, and usage history. '
+        'This cannot be undone.',
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel')),
+        TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Remove & Delete')),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return;
+  if (link.deviceId == null) return;
+
+  // Show loading
+  if (mounted) {
+    showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Remove Device'),
-        content: const Text(
-            'Unlink this child\'s device? Monitoring will stop immediately.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: TextButton.styleFrom(foregroundColor: AppColors.error),
-              child: const Text('Remove')),
-        ],
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  try {
+    await _pairingService.unlinkAndDeleteAll(
+      linkId:   link.pCLinkId,
+      deviceId: link.deviceId!,
+    );
+  } catch (e) {
+    if (mounted) Navigator.pop(context); // dismiss loading
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to remove device: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+    return;
+  }
+
+  if (mounted) Navigator.pop(context); // dismiss loading
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Device removed and all data deleted.'),
+        backgroundColor: Color(0xFF2E7D32),
       ),
     );
-    if (confirmed == true) await _pairingService.unlinkDevice(link.pCLinkId);
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -159,6 +203,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       ]),
     );
   }
+
+  
 }
 
 // ─── Greeting header ──────────────────────────────────────────────────────────
@@ -254,7 +300,7 @@ class _ChildCard extends StatelessWidget {
         final childName  = device?.fullName  ?? '—';
         final childAge   = device?.age;
         final deviceName = device?.deviceName ?? '—';
-        final isPaired   = device?.isPaired   ?? false;
+        final isPaired   = device?.setupComplete ?? false;
 
         return Card(
           margin: const EdgeInsets.only(bottom: 14),
@@ -271,7 +317,7 @@ class _ChildCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _ChildAvatar(
-                          imageUrl: device?.image, name: childName),
+                          imageUrl: device?.imageUrl, name: childName),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -359,42 +405,32 @@ class _MiniStatusStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<HeartbeatModel>(
-      stream: heartbeatService.watchLatestHeartbeat(deviceId),
+      stream: heartbeatService.watchHeartbeat(deviceId),
       builder: (_, snap) {
-        final hb = snap.data ?? HeartbeatModel.dummy(deviceId);
+        final hb = snap.data ?? HeartbeatModel.empty(deviceId);
 
         return Row(children: [
-          // GREEN / YELLOW / RED status from heartbeat timing
           _chip(
-            icon: hb.statusIcon,
+            icon:      hb.statusIcon,
             iconColor: hb.statusColor,
-            label: hb.statusLabel,
-            bgColor: hb.statusColor.withOpacity(0.1),
+            label:     hb.statusLabel,
+            bgColor:   hb.statusColor.withOpacity(0.1),
           ),
           const SizedBox(width: 6),
-
-          // Last heartbeat timestamp
           _chip(
-            icon: Icons.access_time_outlined,
+            icon:      Icons.access_time_outlined,
             iconColor: AppColors.textSub,
-            label: hb.lastSeenLabel,
-            bgColor: AppColors.divider.withOpacity(0.5),
+            label:     hb.lastSeenLabel,
+            bgColor:   Colors.grey.withOpacity(0.1),
           ),
-          const SizedBox(width: 6),
-
-          // Device admin / protection state
-          _chip(
-            icon: hb.deviceAdminActive
-                ? Icons.admin_panel_settings
-                : Icons.admin_panel_settings_outlined,
-            iconColor: hb.deviceAdminActive
-                ? AppColors.statusLinked
-                : AppColors.error,
-            label: hb.deviceAdminActive ? 'Protected' : 'Unprotected',
-            bgColor: hb.deviceAdminActive
-                ? AppColors.statusLinked.withOpacity(0.08)
-                : AppColors.error.withOpacity(0.08),
-          ),
+          // Device admin chip commented out — re-enable in Module 4
+          // const SizedBox(width: 6),
+          // _chip(
+          //   icon:      Icons.admin_panel_settings_outlined,
+          //   iconColor: AppColors.textSub,
+          //   label:     'Module 4',
+          //   bgColor:   Colors.grey.withOpacity(0.08),
+          // ),
         ]);
       },
     );
@@ -405,24 +441,24 @@ class _MiniStatusStrip extends StatelessWidget {
     required Color    iconColor,
     required String   label,
     required Color    bgColor,
-  }) =>
-      Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 11, color: iconColor),
-          const SizedBox(width: 4),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 11,
-                  color: iconColor,
-                  fontWeight: FontWeight.w600)),
-        ]),
-      );
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color:        bgColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 12, color: iconColor),
+        const SizedBox(width: 4),
+        Text(label,
+            style: TextStyle(
+                fontSize: 11,
+                color:    iconColor,
+                fontWeight: FontWeight.w500)),
+      ]),
+    );
+  }
 }
 
 // ─── Child avatar ─────────────────────────────────────────────────────────────
@@ -512,4 +548,6 @@ class _StatusBadge extends StatelessWidget {
       ]),
     );
   }
+  
+  
 }
