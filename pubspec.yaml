@@ -41,6 +41,9 @@ dependencies:
  # Gemini AI classification
   google_generative_ai: ^0.4.0
 
+  # Battery level — heartbeat
+  battery_plus: ^6.0.1
+
 
   # Background service (foreground service + heartbeat timer)
   flutter_background_service: ^5.0.5

@@ -1,12 +1,16 @@
 // lib/screens/child/child_active_screen.dart
-// UPDATED for Module 2:
-//   1. Writes setup_phase = 'active' to Firestore (triggers parent navigation)
-//   2. Starts ContentDetectionService (Module 2 accessibility + Gemini)
-//   3. Listens for parent unlink → clears session → RegisterScreen
+// UPDATED — Module 2:
+//   1. Writes setup_phase = 'active' on init
+//   2. Starts ContentDetectionService (Gemini text capture)
+//   3. Writes heartbeat to Firestore every 10 minutes  ← THE FIX
+//   4. Tracks accessibility + battery in each heartbeat
+//   5. Listens for parent unlink
 
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:battery_plus/battery_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/content_detection_service.dart';
 import '../../utils/app_theme.dart';
@@ -21,10 +25,16 @@ class ChildActiveScreen extends StatefulWidget {
 
 class _ChildActiveScreenState extends State<ChildActiveScreen> {
   StreamSubscription<DocumentSnapshot>? _linkSub;
-  bool _unlinking = false;
+  Timer?  _heartbeatTimer;
+  bool    _unlinking = false;
+  String? _deviceId;
+  String? _linkId;
 
-  // Module 2 — content detection service instance
   final _detectionService = ContentDetectionService();
+  final _battery          = Battery();
+
+  // How often to write a heartbeat — 10 minutes
+  static const _heartbeatInterval = Duration(minutes: 10);
 
   @override
   void initState() {
@@ -33,55 +43,89 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
   }
 
   Future<void> _init() async {
-    final prefs  = await SharedPreferences.getInstance();
-    final linkId = prefs.getString('link_id');
+    final prefs = await SharedPreferences.getInstance();
+    _linkId    = prefs.getString('link_id');
+    _deviceId  = prefs.getString('device_id');
 
-    if (linkId == null) {
+    if (_linkId == null || _deviceId == null) {
       _forceLogout();
       return;
     }
 
-    // ── Step 1: Mark setup_phase = active so parent navigates ──────────────
+    // ── Step 1: Mark setup_phase = active ──────────────────────────────────
     try {
       await FirebaseFirestore.instance
           .collection('parent_child_links')
-          .doc(linkId)
+          .doc(_linkId)
           .update({'setup_phase': 'active'});
-    } catch (e) {
+    } catch (_) {
       await Future.delayed(const Duration(seconds: 2));
       try {
         await FirebaseFirestore.instance
             .collection('parent_child_links')
-            .doc(linkId)
+            .doc(_linkId)
             .update({'setup_phase': 'active'});
       } catch (_) {}
     }
 
-    // ── Step 2: Start Module 2 content detection ────────────────────────────
-    // Starts accessibility stream listener + Gemini classification
+    // ── Step 2: Start content detection (Module 2) ─────────────────────────
     await _detectionService.start();
 
-    // ── Step 3: Listen for parent unlinking ────────────────────────────────
+    // ── Step 3: Write first heartbeat immediately, then every 10 minutes ───
+    await _writeHeartbeat();
+    _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) => _writeHeartbeat());
+
+    // ── Step 4: Listen for parent unlink ────────────────────────────────────
     _linkSub = FirebaseFirestore.instance
         .collection('parent_child_links')
-        .doc(linkId)
+        .doc(_linkId)
         .snapshots()
         .listen((doc) {
       if (!mounted) return;
       if (!doc.exists) { _forceLogout(); return; }
-      final linkStatus    = doc.data()?['link_status']    as String?;
-      final pairingStatus = doc.data()?['pairing_status'] as String?;
-      if (linkStatus == 'removed' || pairingStatus == 'expired') {
-        _forceLogout();
-      }
+      final ls = doc.data()?['link_status']    as String?;
+      final ps = doc.data()?['pairing_status'] as String?;
+      if (ls == 'removed' || ps == 'expired') _forceLogout();
     }, onError: (_) {});
+  }
+
+  // ── Write one heartbeat document to Firestore ────────────────────────────
+  Future<void> _writeHeartbeat() async {
+    if (_deviceId == null) return;
+
+    // Check accessibility permission status
+    bool accessibilityOn = false;
+    try {
+      accessibilityOn =
+          await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+    } catch (_) {}
+
+    // Get battery level
+    int? batteryLevel;
+    try {
+      batteryLevel = await _battery.batteryLevel;
+    } catch (_) {}
+
+    try {
+      await FirebaseFirestore.instance.collection('heartbeat').add({
+        'device_id':           _deviceId,
+        'timestamp':           FieldValue.serverTimestamp(),
+        'signal_status':       'active',
+        'safechild_running':   true,
+        'device_admin_active': false,     // Module 4 will update this
+        'accessibility_active': accessibilityOn,
+        if (batteryLevel != null) 'battery_level': batteryLevel,
+      });
+    } catch (_) {
+      // Heartbeat write failed — not fatal, will retry next cycle
+    }
   }
 
   Future<void> _forceLogout() async {
     if (_unlinking || !mounted) return;
     setState(() => _unlinking = true);
 
-    // Stop content detection before logging out
+    _heartbeatTimer?.cancel();
     await _detectionService.stop();
     await _linkSub?.cancel();
 
@@ -142,6 +186,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
 
   @override
   void dispose() {
+    _heartbeatTimer?.cancel();
     _detectionService.stop();
     _linkSub?.cancel();
     super.dispose();
@@ -175,22 +220,28 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
                   'This device is being monitored.\n'
                   'SafeChild runs silently in the background to keep you safe.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: AppColors.textSub, height: 1.6),
+                  style: TextStyle(
+                      fontSize: 14, color: AppColors.textSub, height: 1.6),
                 ),
                 const SizedBox(height: 40),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 10),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.08),
                     borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                    border:
+                        Border.all(color: AppColors.primary.withOpacity(0.2)),
                   ),
                   child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.circle, size: 10, color: AppColors.statusLinked),
+                    Icon(Icons.circle,
+                        size: 10, color: AppColors.statusLinked),
                     SizedBox(width: 8),
                     Text('Monitoring Active',
-                        style: TextStyle(color: AppColors.primary,
-                            fontWeight: FontWeight.w600, fontSize: 13)),
+                        style: TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13)),
                   ]),
                 ),
                 const SizedBox(height: 16),

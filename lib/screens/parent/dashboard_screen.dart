@@ -144,7 +144,11 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                     context,
                     MaterialPageRoute(
                         builder: (_) =>
-                            ChildStatusScreen(link: links[i])),
+                           ChildStatusScreen(
+                            deviceId:   links[i].deviceId ?? '',
+                            deviceName: 'Child Device',
+                        ),
+                    ),
                   ),
                   onUnlink: () => _unlinkDevice(links[i]),
                 ),
@@ -373,7 +377,7 @@ class _MiniStatusStrip extends StatelessWidget {
           _chip(
             icon: Icons.access_time_outlined,
             iconColor: AppColors.textSub,
-            label: hb.lastSeenText,
+            label: hb.lastSeenLabel,
             bgColor: AppColors.divider.withOpacity(0.5),
           ),
           const SizedBox(width: 6),
