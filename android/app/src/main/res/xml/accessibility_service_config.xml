@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  android/app/src/main/res/xml/accessibility_service_config.xml
+
+  Configures what screen events the flutter_accessibility_service plugin captures.
+
+  accessibilityEventTypes:
+    typeWindowContentChanged — fires when app content updates (new message, page load)
+    typeViewTextChanged      — fires when text field changes
+
+  canRetrieveWindowContent:
+    true — allows reading text from the currently visible window
+
+  notificationTimeout:
+    100ms — minimum delay between events to avoid flooding
+-->
+<accessibility-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowsChanged|typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackVisual"
+    android:notificationTimeout="300"
+    android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagRequestTouchExplorationMode|flagRequestEnhancedWebAccessibility|flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true" />

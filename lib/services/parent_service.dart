@@ -1,6 +1,11 @@
 // lib/services/parent_service.dart
+// UPDATED for Module 2:
+// Added saveFcmToken() — stores FCM token in parents/{parentId}.fcm_token
+// The Firebase Cloud Function reads this token to send incident alerts.
+// Call saveFcmToken() after parent login (in dashboard_screen initState).
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../models/parent_model.dart';
 
 class ParentService {
@@ -14,9 +19,9 @@ class ParentService {
     required String fullName,
   }) async {
     final model = ParentModel(
-      parentId: parentId,
-      email: email,
-      fullName: fullName,
+      parentId:    parentId,
+      email:       email,
+      fullName:    fullName,
       dateCreated: DateTime.now(),
     );
     await _col.doc(parentId).set(model.toFirestore());
@@ -32,4 +37,24 @@ class ParentService {
       _col.doc(parentId).snapshots().map(
             (doc) => doc.exists ? ParentModel.fromFirestore(doc) : null,
           );
+
+  // ── Save parent FCM token so Cloud Function can send alerts ───────────────
+  // Call this once after parent logs in and on token refresh.
+  // The Cloud Function (functions/index.js) reads parents/{parentId}.fcm_token
+  // when a new incident with is_alert_send = true is created.
+  Future<void> saveFcmToken(String parentId) async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null) return;
+
+      await _col.doc(parentId).update({'fcm_token': token});
+
+      // Also handle token refresh
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+        _col.doc(parentId).update({'fcm_token': newToken});
+      });
+    } catch (_) {
+      // Non-fatal — alert will fail silently if token missing
+    }
+  }
 }

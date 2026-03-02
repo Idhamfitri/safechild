@@ -1,12 +1,14 @@
 // lib/screens/child/child_active_screen.dart
-// On init: directly writes setup_phase = 'active' to Firestore using linkId.
-// This is the ONLY thing the parent is waiting for.
-// Also listens for parent unlink → clears session → RegisterScreen.
+// UPDATED for Module 2:
+//   1. Writes setup_phase = 'active' to Firestore (triggers parent navigation)
+//   2. Starts ContentDetectionService (Module 2 accessibility + Gemini)
+//   3. Listens for parent unlink → clears session → RegisterScreen
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/content_detection_service.dart';
 import '../../utils/app_theme.dart';
 import '../auth/register_screen.dart';
 
@@ -20,6 +22,9 @@ class ChildActiveScreen extends StatefulWidget {
 class _ChildActiveScreenState extends State<ChildActiveScreen> {
   StreamSubscription<DocumentSnapshot>? _linkSub;
   bool _unlinking = false;
+
+  // Module 2 — content detection service instance
+  final _detectionService = ContentDetectionService();
 
   @override
   void initState() {
@@ -37,14 +42,12 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
     }
 
     // ── Step 1: Mark setup_phase = active so parent navigates ──────────────
-    // This is all the parent is waiting for. Simple direct write.
     try {
       await FirebaseFirestore.instance
           .collection('parent_child_links')
           .doc(linkId)
           .update({'setup_phase': 'active'});
     } catch (e) {
-      // If write fails, retry once after 2 seconds
       await Future.delayed(const Duration(seconds: 2));
       try {
         await FirebaseFirestore.instance
@@ -54,7 +57,11 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
       } catch (_) {}
     }
 
-    // ── Step 2: Listen for parent unlinking ────────────────────────────────
+    // ── Step 2: Start Module 2 content detection ────────────────────────────
+    // Starts accessibility stream listener + Gemini classification
+    await _detectionService.start();
+
+    // ── Step 3: Listen for parent unlinking ────────────────────────────────
     _linkSub = FirebaseFirestore.instance
         .collection('parent_child_links')
         .doc(linkId)
@@ -74,6 +81,8 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
     if (_unlinking || !mounted) return;
     setState(() => _unlinking = true);
 
+    // Stop content detection before logging out
+    await _detectionService.stop();
     await _linkSub?.cancel();
 
     final prefs = await SharedPreferences.getInstance();
@@ -92,7 +101,8 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
           Container(
             width: 64, height: 64,
             decoration: BoxDecoration(
-                color: AppColors.error.withOpacity(0.1), shape: BoxShape.circle),
+                color: AppColors.error.withOpacity(0.1),
+                shape: BoxShape.circle),
             child: const Icon(Icons.link_off, size: 34, color: AppColors.error),
           ),
           const SizedBox(height: 16),
@@ -132,6 +142,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
 
   @override
   void dispose() {
+    _detectionService.stop();
     _linkSub?.cancel();
     super.dispose();
   }
@@ -152,7 +163,8 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
                     color: AppColors.primary.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.shield, size: 62, color: AppColors.primary),
+                  child: const Icon(Icons.shield,
+                      size: 62, color: AppColors.primary),
                 ),
                 const SizedBox(height: 28),
                 const Text('SafeChild is Active',
@@ -182,8 +194,10 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
                   ]),
                 ),
                 const SizedBox(height: 16),
-                const Text('Background services will be enabled in Module 4.',
-                    style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                const Text(
+                  'AI content detection is running.',
+                  style: TextStyle(fontSize: 11, color: AppColors.textSub),
+                ),
               ]),
             ),
           ),
@@ -191,7 +205,8 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
         if (_unlinking)
           Container(
             color: Colors.black38,
-            child: const Center(child: CircularProgressIndicator(color: Colors.white)),
+            child: const Center(
+                child: CircularProgressIndicator(color: Colors.white)),
           ),
       ]),
     );

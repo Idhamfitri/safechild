@@ -38,8 +38,20 @@ dependencies:
   firebase_messaging: ^14.7.19
   firebase_storage: ^11.6.0
 
+ # Gemini AI classification
+  google_generative_ai: ^0.4.0
+
+
   # Background service (foreground service + heartbeat timer)
   flutter_background_service: ^5.0.5
+
+    # Accessibility text capture from child device screen
+  flutter_accessibility_service: ^0.3.0
+
+  # Internet connectivity check — route to Gemini vs offline backup
+  connectivity_plus: ^6.0.0
+
+
 
   # Device Info (for child device hardware collection on pairing)
   device_info_plus: ^10.1.0

@@ -34,6 +34,13 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   String get _parentId => FirebaseAuth.instance.currentUser!.uid;
 
+  @override
+  void initState() {
+    super.initState();
+    // Module 2: save FCM token so Cloud Function can send incident alerts
+    _parentService.saveFcmToken(_parentId);
+  }
+
   Future<void> _logout() async {
     final confirmed = await showDialog<bool>(
       context: context,
