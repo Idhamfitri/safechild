@@ -1,6 +1,6 @@
 // lib/screens/parent/pairing_code_screen.dart
-// FIXED: digit boxes now use FittedBox + LayoutBuilder so they never overflow
-// on any screen size (small physical device or emulator).
+// Parent shows pairing code, then a simple "Linking in process..." spinner
+// until the child completes full setup (setup_phase == active).
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -21,8 +21,9 @@ class PairingCodeScreen extends StatefulWidget {
 class _PairingCodeScreenState extends State<PairingCodeScreen> {
   final _pairingService = PairingService();
   late StreamSubscription<ParentChildLinkModel> _sub;
+
   ParentChildLinkModel? _link;
-  bool _linked = false;
+  bool _navigating = false;
 
   @override
   void initState() {
@@ -30,24 +31,28 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
     _link = widget.link;
     _sub = _pairingService
         .watchLinkStatus(widget.link.pCLinkId)
-        .listen((updated) {
-      if (!mounted) return;
-      setState(() => _link = updated);
-      if (updated.isLinked && !_linked) {
-        _linked = true;
-        HapticFeedback.mediumImpact();
-        Future.delayed(const Duration(seconds: 2), () {
-          if (!mounted) return;
-          Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const ParentDashboardScreen()),
-              (_) => false);
-        });
-      } else if (updated.isExpired) {
-        _showExpiredDialog();
-      }
-    });
+        .listen(_onLinkUpdate);
+  }
+
+  void _onLinkUpdate(ParentChildLinkModel updated) {
+    if (!mounted) return;
+    setState(() => _link = updated);
+
+    if (updated.isExpired && !_navigating) _showExpiredDialog();
+
+    // Navigate only when child has fully completed setup
+    if (updated.isSetupActive && !_navigating) {
+      _navigating = true;
+      HapticFeedback.mediumImpact();
+      Future.delayed(const Duration(milliseconds: 800), () {
+        if (!mounted) return;
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const ParentDashboardScreen()),
+          (_) => false,
+        );
+      });
+    }
   }
 
   void _showExpiredDialog() {
@@ -77,21 +82,31 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
       builder: (_) => AlertDialog(
         title: const Text('Cancel Pairing?'),
         content: const Text(
-            'The pairing code will be invalidated. You can generate a new one later.'),
+            'The pairing code will be cancelled. This device will be removed.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
               child: const Text('Keep Waiting')),
-          TextButton(
+          ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: Colors.white),
               onPressed: () => Navigator.pop(context, true),
-              style: TextButton.styleFrom(foregroundColor: AppColors.error),
-              child: const Text('Cancel')),
+              child: const Text('Yes, Cancel')),
         ],
       ),
     );
     if (confirmed == true) {
+      // Expire the code AND remove the link so card disappears from dashboard
       await _pairingService.expirePairingCode(widget.link.pCLinkId);
-      if (mounted) Navigator.pop(context);
+      await _pairingService.unlinkDevice(widget.link.pCLinkId);
+      if (!mounted) return;
+      // Clear entire stack back to parent dashboard
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const ParentDashboardScreen()),
+        (_) => false,
+      );
     }
   }
 
@@ -112,23 +127,29 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final link  = _link ?? widget.link;
+    final phase = link.setupPhase;
+
     return PopScope(
-      canPop: _linked,
+      canPop: false,
       onPopInvoked: (didPop) { if (!didPop) _cancel(); },
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Link Child Device'),
-          automaticallyImplyLeading: !_linked,
+          leading: IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: _cancel,
+          ),
         ),
-        body: _linked ? _buildSuccess() : _buildCodeDisplay(),
+        body: phase == SetupPhase.pending
+            ? _buildCodeDisplay(link.pairingCode)
+            : _buildLinking(),
       ),
     );
   }
 
-  // ── Code display ──────────────────────────────────────────────────────────
-  Widget _buildCodeDisplay() {
-    final code = _link?.pairingCode ?? widget.link.pairingCode;
-
+  // ── Show pairing code — before child enters it ────────────────────────────
+  Widget _buildCodeDisplay(String code) {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
@@ -142,8 +163,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
                 size: 44, color: AppColors.primary),
           ),
           const SizedBox(height: 20),
-
-          const Text('Enter this code on your child\'s device',
+          const Text("Enter this code on your child's device",
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 18,
@@ -151,18 +171,16 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
                   color: AppColors.textPrimary)),
           const SizedBox(height: 6),
           const Text(
-              'Open SafeChild on the child\'s device → tap "Create Account" → '
-              'select "Child Device" → enter the code below.',
+              'Open SafeChild → "Create Account" → "Child Device" → enter the code below.',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 13, color: AppColors.textSub, height: 1.5)),
           const SizedBox(height: 32),
 
-          // ── Code box ─────────────────────────────────────────────────────
+          // Code box
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(
-                horizontal: 20, vertical: 24),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
@@ -182,42 +200,33 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
                       fontWeight: FontWeight.w600)),
               const SizedBox(height: 16),
 
-              // ── FIXED: LayoutBuilder so digits never overflow ──────────
-              LayoutBuilder(
-                builder: (_, constraints) {
-                  // Available width ÷ 6 digits, minus margins between them
-                  final totalMargin = 6.0 * 2; // 6 gaps × margin per side
-                  final digitW = ((constraints.maxWidth - totalMargin * 6) / 6)
-                      .clamp(32.0, 52.0);
-                  final digitH = (digitW * 1.25).clamp(40.0, 64.0);
-                  final fontSize = (digitW * 0.55).clamp(18.0, 28.0);
+              // Responsive digit boxes
+              LayoutBuilder(builder: (_, c) {
+                final dw = ((c.maxWidth - 48) / 6).clamp(32.0, 52.0);
+                final dh = (dw * 1.25).clamp(40.0, 64.0);
+                final fs = (dw * 0.55).clamp(18.0, 28.0);
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(code.length, (i) => Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    width: dw, height: dh,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.07),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppColors.primary.withOpacity(0.2)),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(code[i],
+                        style: TextStyle(
+                            fontSize: fs,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary)),
+                  )),
+                );
+              }),
 
-                  return Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(code.length, (i) {
-                      return Container(
-                        margin: const EdgeInsets.symmetric(horizontal: 4),
-                        width: digitW,
-                        height: digitH,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.07),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: AppColors.primary.withOpacity(0.2)),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(code[i],
-                            style: TextStyle(
-                                fontSize: fontSize,
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primary)),
-                      );
-                    }),
-                  );
-                },
-              ),
-
-              const SizedBox(height: 14),
+              const SizedBox(height: 12),
               TextButton.icon(
                 onPressed: _copyCode,
                 icon: const Icon(Icons.copy_outlined, size: 15),
@@ -228,22 +237,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
             ]),
           ),
 
-          const SizedBox(height: 28),
-
-          // Waiting indicator
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const SizedBox(
-                width: 16, height: 16,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2, color: AppColors.primary)),
-            const SizedBox(width: 10),
-            Text('Waiting for child device...',
-                style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.textSub.withOpacity(0.8))),
-          ]),
-
-          const SizedBox(height: 36),
+          const SizedBox(height: 32),
           TextButton(
             onPressed: _cancel,
             child: const Text('Cancel',
@@ -254,34 +248,33 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
     );
   }
 
-  // ── Success state ─────────────────────────────────────────────────────────
-  Widget _buildSuccess() {
+  // ── Simple linking spinner — shown after child enters code ────────────────
+  Widget _buildLinking() {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.all(40),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 100, height: 100,
-            decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                shape: BoxShape.circle),
-            child: const Icon(Icons.check_circle,
-                size: 60, color: AppColors.primary),
-          ),
-          const SizedBox(height: 24),
-          const Text('Device Linked!',
+          const CircularProgressIndicator(
+              color: AppColors.primary, strokeWidth: 3),
+          const SizedBox(height: 28),
+          const Text('Linking in process...',
               style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary)),
-          const SizedBox(height: 10),
-          const Text(
-              'The child\'s device is now linked. Monitoring will begin shortly.',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textPrimary)),
+          const SizedBox(height: 8),
+          const Text('Please wait while the child device finishes setup.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                  fontSize: 14, color: AppColors.textSub, height: 1.5)),
-          const SizedBox(height: 24),
-          const CircularProgressIndicator(color: AppColors.primary),
+                  fontSize: 13,
+                  color: AppColors.textSub,
+                  height: 1.5)),
+          const SizedBox(height: 40),
+          TextButton(
+            onPressed: _cancel,
+            child: const Text('Cancel',
+                style: TextStyle(color: AppColors.error)),
+          ),
         ]),
       ),
     );

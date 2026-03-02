@@ -7,14 +7,13 @@ import 'package:firebase_core/firebase_core.dart';
 import 'screens/auth/splash_screen.dart';
 import 'utils/app_theme.dart';
 
-import 'firebase_options.dart';
-
-
+// ⚠️  Run `flutterfire configure` to generate this file, then uncomment:
+// import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
-     options: DefaultFirebaseOptions.currentPlatform,
+    // options: DefaultFirebaseOptions.currentPlatform,
   );
   runApp(const SafeChildApp());
 }

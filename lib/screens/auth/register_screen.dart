@@ -141,10 +141,12 @@ class _RegisterScreenState extends State<RegisterScreen>
         return;
       }
       // Get link_id to store locally
-      final linkId = await _pairingService.getLinkIdByCode(code);
+      final linkId   = await _pairingService.getLinkIdByCode(code);
+      final deviceId = await _pairingService.getDeviceIdByCode(code);
       final prefs  = await SharedPreferences.getInstance();
       await prefs.setString('role', 'child');
-      if (linkId != null) await prefs.setString('link_id', linkId);
+      if (linkId   != null) await prefs.setString('link_id',   linkId);
+      if (deviceId != null) await prefs.setString('device_id', deviceId);
 
       if (mounted) {
         Navigator.pushAndRemoveUntil(

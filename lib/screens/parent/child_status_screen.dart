@@ -1,15 +1,13 @@
 // lib/screens/parent/child_status_screen.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// Bottom-nav shell screen with 3 tabs:
-//   Tab 0 — Status   : live heartbeat + screen time + recent apps
-//   Tab 1 — Settings : ConfigurationSettingScreen
-//   Tab 2 — Alerts   : NotificationAlertScreen (bypass + incidents)
-//
-// Header: child avatar, name, age, device.
-// Notification bell badge: total unreviewed bypass + incident count.
-// Status uses GREEN/YELLOW/RED from HeartbeatModel.dashboardStatus.
-// ─────────────────────────────────────────────────────────────────────────────
+// UPDATED:
+//  - Streams child_devices doc in real-time (not one-time fetch)
+//  - Shows real device info: model, manufacturer, Android version, SDK
+//  - Protection status card reads from device.permissionStatus (written by child
+//    during permission setup) — updates live whenever child grants a permission
+//  - Heartbeat card still shows GREEN/YELLOW/RED (Module 3 data)
+//  - Device info card: "Paired device hardware" section
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -39,7 +37,10 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   final _bypassService    = BypassEventService();
   final _incidentService  = IncidentService();
 
+  // Stream subscription for real-time device updates
+  StreamSubscription<ChildDeviceModel?>? _deviceSub;
   ChildDeviceModel? _device;
+
   int _tabIndex = 0;
   late TabController _chartTabCtrl;
   int _chartTab = 0;
@@ -53,17 +54,22 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
           setState(() => _chartTab = _chartTabCtrl.index);
         }
       });
-    _loadDevice();
+    _startDeviceStream();
   }
 
-  Future<void> _loadDevice() async {
+  void _startDeviceStream() {
     if (widget.link.deviceId == null) return;
-    final d = await _pairingService.getChildDevice(widget.link.deviceId!);
-    if (mounted) setState(() => _device = d);
+    // Real-time stream — fires whenever child writes permission_status or other fields
+    _deviceSub = _pairingService
+        .watchChildDevice(widget.link.deviceId!)
+        .listen((device) {
+      if (mounted) setState(() => _device = device);
+    });
   }
 
   @override
   void dispose() {
+    _deviceSub?.cancel();
     _chartTabCtrl.dispose();
     super.dispose();
   }
@@ -121,17 +127,16 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
             activeIcon: Icon(Icons.tune),
             label: 'Settings',
           ),
-          // Alerts tab with live badge
           BottomNavigationBarItem(
             icon: _AlertBadge(
-              deviceId:       deviceId,
-              bypassService:  _bypassService,
+              deviceId:        deviceId,
+              bypassService:   _bypassService,
               incidentService: _incidentService,
               child: const Icon(Icons.notifications_outlined),
             ),
             activeIcon: _AlertBadge(
-              deviceId:       deviceId,
-              bypassService:  _bypassService,
+              deviceId:        deviceId,
+              bypassService:   _bypassService,
               incidentService: _incidentService,
               child: const Icon(Icons.notifications),
             ),
@@ -142,7 +147,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
-  // ── Header with unread badge on bell ─────────────────────────────────────
+  // ── Header ────────────────────────────────────────────────────────────────
   Widget _buildHeader(
       String name, int? age, String devName, String deviceId) {
     return Container(
@@ -190,19 +195,17 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
                 ],
               ),
             ),
-            // Bell with live badge
             Stack(children: [
               IconButton(
                 icon: const Icon(Icons.notifications_outlined,
                     color: Colors.white),
-                onPressed: () =>
-                    setState(() => _tabIndex = 2),
+                onPressed: () => setState(() => _tabIndex = 2),
               ),
               Positioned(
                 top: 8, right: 8,
                 child: _AlertBadgeDot(
-                  deviceId:       deviceId,
-                  bypassService:  _bypassService,
+                  deviceId:        deviceId,
+                  bypassService:   _bypassService,
                   incidentService: _incidentService,
                 ),
               ),
@@ -214,9 +217,9 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
   }
 }
 
-// ─── Live alert badge dot (used in header bell) ───────────────────────────────
+// ─── Alert badge widgets ──────────────────────────────────────────────────────
 class _AlertBadgeDot extends StatelessWidget {
-  final String           deviceId;
+  final String             deviceId;
   final BypassEventService bypassService;
   final IncidentService    incidentService;
 
@@ -230,25 +233,22 @@ class _AlertBadgeDot extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<int>(
       stream: bypassService.watchUnreviewedCount(deviceId),
-      builder: (_, bSnap) {
-        return StreamBuilder<int>(
-          stream: incidentService.watchUnreviewedCount(deviceId),
-          builder: (_, iSnap) {
-            final total = (bSnap.data ?? 3) + (iSnap.data ?? 2);
-            if (total == 0) return const SizedBox.shrink();
-            return Container(
-              width: 9, height: 9,
-              decoration: const BoxDecoration(
-                  color: AppColors.error, shape: BoxShape.circle),
-            );
-          },
-        );
-      },
+      builder: (_, bSnap) => StreamBuilder<int>(
+        stream: incidentService.watchUnreviewedCount(deviceId),
+        builder: (_, iSnap) {
+          final total = (bSnap.data ?? 3) + (iSnap.data ?? 2);
+          if (total == 0) return const SizedBox.shrink();
+          return Container(
+            width: 9, height: 9,
+            decoration: const BoxDecoration(
+                color: AppColors.error, shape: BoxShape.circle),
+          );
+        },
+      ),
     );
   }
 }
 
-// ─── Live alert badge (used in bottom nav item) ───────────────────────────────
 class _AlertBadge extends StatelessWidget {
   final String             deviceId;
   final BypassEventService bypassService;
@@ -266,43 +266,40 @@ class _AlertBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return StreamBuilder<int>(
       stream: bypassService.watchUnreviewedCount(deviceId),
-      builder: (_, bSnap) {
-        return StreamBuilder<int>(
-          stream: incidentService.watchUnreviewedCount(deviceId),
-          builder: (_, iSnap) {
-            final total = (bSnap.data ?? 3) + (iSnap.data ?? 2);
-            if (total == 0) return child;
-            return Stack(
-              clipBehavior: Clip.none,
-              children: [
-                child,
-                Positioned(
-                  top: -4, right: -6,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: const BoxDecoration(
-                        color: AppColors.error,
-                        shape: BoxShape.circle),
-                    child: Text(
-                      total > 9 ? '9+' : '$total',
-                      style: const TextStyle(
-                          fontSize: 9,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700),
-                    ),
+      builder: (_, bSnap) => StreamBuilder<int>(
+        stream: incidentService.watchUnreviewedCount(deviceId),
+        builder: (_, iSnap) {
+          final total = (bSnap.data ?? 3) + (iSnap.data ?? 2);
+          if (total == 0) return child;
+          return Stack(
+            clipBehavior: Clip.none,
+            children: [
+              child,
+              Positioned(
+                top: -4, right: -6,
+                child: Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: const BoxDecoration(
+                      color: AppColors.error, shape: BoxShape.circle),
+                  child: Text(
+                    total > 9 ? '9+' : '$total',
+                    style: const TextStyle(
+                        fontSize: 9,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700),
                   ),
                 ),
-              ],
-            );
-          },
-        );
-      },
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  STATUS TAB  — live heartbeat data + chart + apps
+//  STATUS TAB
 // ══════════════════════════════════════════════════════════════════════════════
 class _StatusTab extends StatelessWidget {
   final ParentChildLinkModel link;
@@ -319,7 +316,6 @@ class _StatusTab extends StatelessWidget {
     required this.chartTab,
   });
 
-  // Mock chart data (replaced by UsageStats pull in Module 3 Part 3)
   List<FlSpot> get _spots {
     switch (chartTab) {
       case 0: return [
@@ -350,143 +346,346 @@ class _StatusTab extends StatelessWidget {
     _App('Roblox',    Icons.sports_esports,    '30m',    Color(0xFF0066FF)),
   ];
 
+  String get _deviceId => link.deviceId ?? '';
+
   @override
   Widget build(BuildContext context) {
-    final deviceId = link.deviceId ?? '';
-
     return StreamBuilder<HeartbeatModel>(
-      stream: heartbeatService.watchLatestHeartbeat(deviceId),
+      stream: heartbeatService.watchLatestHeartbeat(_deviceId),
       builder: (_, snap) {
-        final hb = snap.data ?? HeartbeatModel.dummy(deviceId);
-
-        return SingleChildScrollView(
+        final hb = snap.data ?? HeartbeatModel.dummy(_deviceId);
+        return ListView(
           padding: const EdgeInsets.all(16),
-          child: Column(children: [
+          children: [
+            // ── Device Info Card (REAL data from child device) ──────────────
+            _buildDeviceInfoCard(),
+            const SizedBox(height: 14),
+
+            // ── Heartbeat status card ───────────────────────────────────────
             _buildHeartbeatCard(hb),
             const SizedBox(height: 14),
-            _buildProtectionCard(hb),
+
+            // ── Protection status (REAL — from permission_status in Firestore)
+            _buildProtectionCard(),
             const SizedBox(height: 14),
+
+            // ── Screen time chart (Preview) ─────────────────────────────────
             _buildScreenTimeCard(),
             const SizedBox(height: 14),
+
+            // ── Recent apps (Preview) ───────────────────────────────────────
             _buildRecentAppsCard(),
             const SizedBox(height: 14),
+
             _buildM3Note(),
-          ]),
+            const SizedBox(height: 24),
+          ],
         );
       },
     );
   }
 
-  // ── Heartbeat status card ─────────────────────────────────────────────────
-  Widget _buildHeartbeatCard(HeartbeatModel hb) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            const Text('Device Status',
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary)),
-            const Spacer(),
-            // GREEN / YELLOW / RED indicator
-            Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: hb.statusColor.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                    color: hb.statusColor.withOpacity(0.3)),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(hb.statusIcon, size: 13, color: hb.statusColor),
-                const SizedBox(width: 4),
-                Text(hb.statusLabel,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: hb.statusColor,
-                        fontWeight: FontWeight.w700)),
-              ]),
-            ),
-          ]),
-          const Divider(color: AppColors.divider, height: 20),
+  // ── Device info card — REAL hardware data from child phone ────────────────
+  Widget _buildDeviceInfoCard() {
+    final isPaired = device?.isPaired ?? false;
 
-          _statusRow(
-            icon: Icons.circle,
-            color: hb.statusColor,
-            label: hb.isOnline ? 'ONLINE (Device Active)' : 'OFFLINE',
-            bold: true,
-          ),
-          const SizedBox(height: 10),
-          _statusRow(
-            icon: Icons.access_time_outlined,
-            color: AppColors.textSub,
-            label: 'Last Heartbeat: ${hb.lastSeenText}',
-          ),
-          const SizedBox(height: 10),
-          _statusRow(
-            icon: hb.signalStatus == SignalStatus.active
-                ? Icons.wifi_tethering
-                : Icons.wifi_tethering_off,
-            color: hb.signalStatus == SignalStatus.active
-                ? AppColors.statusLinked
-                : AppColors.error,
-            label: 'Signal: ${hb.signalStatus == SignalStatus.active ? 'Active' : 'Lost'}',
-          ),
-
-          // Timing legend
-          const SizedBox(height: 14),
-          const Divider(color: AppColors.divider, height: 1),
-          const SizedBox(height: 10),
-          Row(children: [
-            _timingDot(AppColors.statusLinked, '< 12 min'),
-            const SizedBox(width: 12),
-            _timingDot(AppColors.statusPending, '12–20 min'),
-            const SizedBox(width: 12),
-            _timingDot(AppColors.error, '> 20 min'),
-          ]),
-        ]),
-      ),
-    );
-  }
-
-  // ── Protection status card ────────────────────────────────────────────────
-  Widget _buildProtectionCard(HeartbeatModel hb) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Protection Status',
+            Row(children: [
+              const Text('Device Information',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isPaired
+                      ? AppColors.statusLinked.withOpacity(0.1)
+                      : AppColors.statusPending.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  isPaired ? 'Paired' : 'Pending',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isPaired
+                          ? AppColors.statusLinked
+                          : AppColors.statusPending),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 14),
+
+            // Child name row
+            _infoRow(
+              icon: Icons.person_outline,
+              label: 'Child Name',
+              value: device?.fullName ?? '—',
+            ),
+            const SizedBox(height: 10),
+
+            // Device name (set by parent)
+            _infoRow(
+              icon: Icons.label_outline,
+              label: 'Device Name',
+              value: device?.deviceName ?? '—',
+            ),
+            const SizedBox(height: 10),
+
+            // Hardware model (written by child device on pairing)
+            _infoRow(
+              icon: Icons.smartphone,
+              label: 'Model',
+              value: isPaired
+                  ? device!.deviceInfoLine
+                  : 'Not paired yet',
+              valueColor: isPaired ? null : AppColors.textSub,
+            ),
+            const SizedBox(height: 10),
+
+            // Android version
+            _infoRow(
+              icon: Icons.android,
+              label: 'OS',
+              value: isPaired
+                  ? device!.androidLabel
+                  : '—',
+            ),
+            const SizedBox(height: 10),
+
+            // Last seen
+            _infoRow(
+              icon: Icons.sync_outlined,
+              label: 'Last Sync',
+              value: device?.lastSync != null
+                  ? _formatTime(device!.lastSync!)
+                  : 'Never',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Heartbeat card ────────────────────────────────────────────────────────
+  Widget _buildHeartbeatCard(HeartbeatModel hb) {
+    final status = hb.dashboardStatus;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Connection Status',
                 style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: AppColors.textPrimary)),
             const SizedBox(height: 14),
 
-            _protectionRow(
-              icon: Icons.admin_panel_settings_outlined,
-              label: 'Device Administrator',
-              subtitle: 'Blocks uninstall attempts',
-              active: hb.deviceAdminActive,
+            // Big status badge
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: hb.statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: hb.statusColor.withOpacity(0.3)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(hb.statusIcon, size: 16,
+                      color: hb.statusColor),
+                  const SizedBox(width: 6),
+                  Text(hb.statusLabel,
+                      style: TextStyle(
+                          color: hb.statusColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13)),
+                ]),
+              ),
+            ]),
+
+            const SizedBox(height: 10),
+            _statusRow(
+              icon: Icons.access_time_outlined,
+              color: AppColors.textSub,
+              label: 'Last Heartbeat: ${hb.lastSeenText}',
             ),
             const SizedBox(height: 10),
-            _protectionRow(
+            _statusRow(
+              icon: hb.signalStatus == SignalStatus.active
+                  ? Icons.wifi_tethering
+                  : Icons.wifi_tethering_off,
+              color: hb.signalStatus == SignalStatus.active
+                  ? AppColors.statusLinked
+                  : AppColors.error,
+              label: 'Signal: ${hb.signalStatus == SignalStatus.active ? 'Active' : 'Lost'}',
+            ),
+
+            const SizedBox(height: 14),
+            const Divider(color: AppColors.divider, height: 1),
+            const SizedBox(height: 10),
+            Row(children: [
+              _timingDot(AppColors.statusLinked, '< 12 min'),
+              const SizedBox(width: 12),
+              _timingDot(AppColors.statusPending, '12–20 min'),
+              const SizedBox(width: 12),
+              _timingDot(AppColors.error, '> 20 min'),
+            ]),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Protection status card — REAL from permission_status in Firestore ──────
+  Widget _buildProtectionCard() {
+    final ps = device?.permissionStatus ?? const DevicePermissionStatus();
+    final granted = ps.grantedCount;
+    final total   = ps.totalCount;
+    final isPaired = device?.isPaired ?? false;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              const Text('Protection Status',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary)),
+              const Spacer(),
+              // Summary badge
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: ps.allGranted
+                      ? AppColors.statusLinked.withOpacity(0.1)
+                      : AppColors.statusPending.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '$granted / $total',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: ps.allGranted
+                          ? AppColors.statusLinked
+                          : AppColors.statusPending),
+                ),
+              ),
+            ]),
+
+            if (!isPaired) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.statusPending.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: AppColors.statusPending.withOpacity(0.2)),
+                ),
+                child: const Row(children: [
+                  Icon(Icons.info_outline,
+                      size: 14, color: AppColors.statusPending),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Permission status will appear once the child '
+                      'completes setup on their device.',
+                      style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSub,
+                          height: 1.4),
+                    ),
+                  ),
+                ]),
+              ),
+            ],
+
+            const SizedBox(height: 14),
+
+            // Progress bar
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: total > 0 ? granted / total : 0,
+                minHeight: 6,
+                backgroundColor: AppColors.divider,
+                valueColor: AlwaysStoppedAnimation(
+                    ps.allGranted
+                        ? AppColors.statusLinked
+                        : AppColors.statusPending),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // Individual permission rows
+            _permRow(
+              icon: Icons.notifications_active_outlined,
+              label: 'Notifications',
+              subtitle: 'Safety alerts to child device',
+              active: ps.notifications,
+            ),
+            const SizedBox(height: 10),
+            _permRow(
+              icon: Icons.layers_outlined,
+              label: 'Display Over Apps',
+              subtitle: 'Intervention screens',
+              active: ps.overlay,
+            ),
+            const SizedBox(height: 10),
+            _permRow(
+              icon: Icons.bar_chart_outlined,
+              label: 'Usage Access',
+              subtitle: 'App & screen time tracking',
+              active: ps.usageAccess,
+            ),
+            const SizedBox(height: 10),
+            _permRow(
               icon: Icons.accessibility_new_outlined,
               label: 'Accessibility Service',
               subtitle: 'Content detection & bypass detection',
-              active: hb.accessibilityActive,
+              active: ps.accessibility,
             ),
             const SizedBox(height: 10),
-            _protectionRow(
-              icon: Icons.shield_outlined,
-              label: 'SafeChild Service',
-              subtitle: 'Heartbeat & foreground monitoring',
-              active: hb.safechildRunning,
+            _permRow(
+              icon: Icons.admin_panel_settings_outlined,
+              label: 'Device Administrator',
+              subtitle: 'Blocks uninstall attempts',
+              active: ps.deviceAdmin,
             ),
+
+            // Last updated
+            if (ps.lastUpdated != null) ...[
+              const SizedBox(height: 12),
+              const Divider(color: AppColors.divider, height: 1),
+              const SizedBox(height: 8),
+              Row(children: [
+                const Icon(Icons.update, size: 12, color: AppColors.textSub),
+                const SizedBox(width: 4),
+                Text(
+                  'Last updated: ${_formatTime(ps.lastUpdated!)}',
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.textSub),
+                ),
+              ]),
+            ],
           ],
         ),
       ),
@@ -520,7 +719,9 @@ class _StatusTab extends StatelessWidget {
             indicatorColor: AppColors.primary,
             indicatorSize: TabBarIndicatorSize.label,
             tabs: const [
-              Tab(text: 'Daily'), Tab(text: 'Weekly'), Tab(text: 'Monthly'),
+              Tab(text: 'Daily'),
+              Tab(text: 'Weekly'),
+              Tab(text: 'Monthly'),
             ],
           ),
           const SizedBox(height: 16),
@@ -536,14 +737,16 @@ class _StatusTab extends StatelessWidget {
               ),
               titlesData: FlTitlesData(
                 leftTitles: AxisTitles(sideTitles: SideTitles(
-                  showTitles: true, reservedSize: 28,
+                  showTitles: true,
+                  reservedSize: 28,
                   interval: chartTab == 2 ? 10 : 1,
                   getTitlesWidget: (v, _) => Text(v.toInt().toString(),
                       style: const TextStyle(
                           fontSize: 10, color: AppColors.textSub)),
                 )),
                 bottomTitles: AxisTitles(sideTitles: SideTitles(
-                  showTitles: true, interval: 1,
+                  showTitles: true,
+                  interval: 1,
                   getTitlesWidget: (v, _) {
                     final i = v.toInt();
                     if (i < 0 || i >= labels.length) {
@@ -577,13 +780,12 @@ class _StatusTab extends StatelessWidget {
                   isStrokeCapRound: true,
                   dotData: FlDotData(
                     show: true,
-                    getDotPainter: (_, __, ___, ____) =>
-                        FlDotCirclePainter(
-                          radius: 3,
-                          color: AppColors.primary,
-                          strokeColor: Colors.white,
-                          strokeWidth: 2,
-                        ),
+                    getDotPainter: (_, __, ___, ____) => FlDotCirclePainter(
+                      radius: 3,
+                      color: AppColors.primary,
+                      strokeColor: Colors.white,
+                      strokeWidth: 2,
+                    ),
                   ),
                   belowBarData: BarAreaData(
                     show: true,
@@ -618,7 +820,7 @@ class _StatusTab extends StatelessWidget {
     );
   }
 
-  // ── Recent apps ───────────────────────────────────────────────────────────
+  // ── Recent apps (preview) ─────────────────────────────────────────────────
   Widget _buildRecentAppsCard() {
     return Card(
       child: Padding(
@@ -656,13 +858,11 @@ class _StatusTab extends StatelessWidget {
             SizedBox(width: 8),
             Expanded(
               child: Text(
-                '"Preview" items show sample data. '
-                'Heartbeat, protection status and screen time will '
-                'be live data from Module 3 child background services.',
+                '"Preview" items show sample data. Screen time and recent '
+                'apps will be live data from Module 3 UsageStatsManager. '
+                'Device info and protection status are real-time.',
                 style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSub,
-                    height: 1.5),
+                    fontSize: 11, color: AppColors.textSub, height: 1.5),
               ),
             ),
           ],
@@ -670,6 +870,73 @@ class _StatusTab extends StatelessWidget {
       );
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+  Widget _infoRow({
+    required IconData icon,
+    required String   label,
+    required String   value,
+    Color?            valueColor,
+  }) =>
+      Row(children: [
+        Icon(icon, size: 16, color: AppColors.textSub),
+        const SizedBox(width: 10),
+        SizedBox(
+          width: 90,
+          child: Text(label,
+              style: const TextStyle(
+                  fontSize: 12, color: AppColors.textSub)),
+        ),
+        Expanded(
+          child: Text(value,
+              style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: valueColor ?? AppColors.textPrimary)),
+        ),
+      ]);
+
+  Widget _permRow({
+    required IconData icon,
+    required String   label,
+    required String   subtitle,
+    required bool     active,
+  }) =>
+      Row(children: [
+        Icon(icon,
+            size: 20,
+            color: active ? AppColors.primary : AppColors.textSub),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: active
+                        ? AppColors.textPrimary
+                        : AppColors.textSub)),
+            Text(subtitle,
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textSub)),
+          ]),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: active
+                ? AppColors.statusLinked.withOpacity(0.1)
+                : AppColors.error.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            active ? 'Granted' : 'Not Granted',
+            style: TextStyle(
+                fontSize: 11,
+                color: active ? AppColors.statusLinked : AppColors.error,
+                fontWeight: FontWeight.w600),
+          ),
+        ),
+      ]);
+
   Widget _statusRow({
     required IconData icon,
     required Color    color,
@@ -689,51 +956,13 @@ class _StatusTab extends StatelessWidget {
         ),
       ]);
 
-  Widget _protectionRow({
-    required IconData icon,
-    required String   label,
-    required String   subtitle,
-    required bool     active,
-  }) =>
-      Row(children: [
-        Icon(icon, size: 20, color: active ? AppColors.primary : AppColors.textSub),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label,
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: active ? AppColors.textPrimary : AppColors.textSub)),
-            Text(subtitle,
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textSub)),
-          ]),
-        ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          decoration: BoxDecoration(
-            color: active
-                ? AppColors.statusLinked.withOpacity(0.1)
-                : AppColors.error.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            active ? 'Active' : 'Inactive',
-            style: TextStyle(
-                fontSize: 11,
-                color: active ? AppColors.statusLinked : AppColors.error,
-                fontWeight: FontWeight.w600),
-          ),
-        ),
-      ]);
-
   Widget _timingDot(Color color, String label) => Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
             width: 8, height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+            decoration:
+                BoxDecoration(color: color, shape: BoxShape.circle),
           ),
           const SizedBox(width: 4),
           Text(label,
@@ -743,7 +972,8 @@ class _StatusTab extends StatelessWidget {
       );
 
   Widget _previewBadge() => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
           color: AppColors.statusPending.withOpacity(0.1),
           borderRadius: BorderRadius.circular(8),
@@ -754,6 +984,14 @@ class _StatusTab extends StatelessWidget {
                 color: AppColors.statusPending,
                 fontWeight: FontWeight.w600)),
       );
+
+  String _formatTime(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inSeconds < 60)  return 'Just now';
+    if (diff.inMinutes < 60)  return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24)    return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
 }
 
 // ─── App data ─────────────────────────────────────────────────────────────────
