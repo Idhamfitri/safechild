@@ -92,7 +92,7 @@ xmlns:tools="http://schemas.android.com/tools">
              in android/app/src/main/kotlin/.../ -->
         
         
-        <service
+        <!-- <service
             android:name="com.flutter_accessibility_service.AccessibilityService"
             android:exported="true"
             android:label="SafeChild"
@@ -103,8 +103,41 @@ xmlns:tools="http://schemas.android.com/tools">
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
-        </service>
-        
+        </service> -->
+
+
+
+<!-- REPAIR OPTION 2 -->
+<!-- <service
+    android:name=".SafeChildAccessibilityService"
+    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.accessibilityservice.AccessibilityService" />
+    </intent-filter>
+    <meta-data
+        android:name="android.accessibilityservice"
+        android:resource="@xml/accessibility_service_config" />
+</service> -->
+
+<!-- REPAIR OPTION 1 -->
+
+    <service
+        android:name="slayer.accessibility.service.flutter_accessibility_service.AccessibilityListener"
+        android:exported="true"
+        android:label="SafeChild"
+        android:foregroundServiceType="connectedDevice"
+        android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+        <intent-filter>
+            <action android:name="android.accessibilityservice.AccessibilityService" />
+        </intent-filter>
+        <meta-data
+            android:name="android.accessibilityservice"
+            android:resource="@xml/accessibilityservice" />
+    </service>
+
+
+
 
         <!-- ── Module 3: Device Admin Receiver (placeholder for Module 3) ──
              Uncomment and implement SafeChildDeviceAdminReceiver in Kotlin

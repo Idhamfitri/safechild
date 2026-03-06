@@ -14,6 +14,7 @@ import '../../services/pairing_service.dart';
 import '../../utils/app_theme.dart';
 import '../auth/register_screen.dart';
 import 'child_active_screen.dart';
+import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 
 class _PermStep {
   final IconData icon;
@@ -167,12 +168,11 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
           break;
 
         case _PermType.accessibility:
-          // Opens system Accessibility settings
-          // On Xiaomi: Additional Settings → Accessibility → Installed Apps → SafeChild
-          // android_intent_plus routes correctly on all Android including Xiaomi
-          const AndroidIntent(
-            action: 'android.settings.ACCESSIBILITY_SETTINGS',
-          ).launch();
+          // Use plugin method — opens settings AND waits for grant
+          // More reliable than android_intent_plus for this specific permission
+          final granted = await FlutterAccessibilityService
+              .requestAccessibilityPermission();
+          debugPrint('SAFECHILD: accessibility granted = $granted');
           break;
 
         // ── Device Admin — commented out until Module 4 ─────────────────
