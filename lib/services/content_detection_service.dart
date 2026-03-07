@@ -3,21 +3,16 @@ import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-// import 'package:firebase_ai/firebase_ai.dart';
+import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
+// import 'package:google_generative_ai/google_generative_ai.dart';
 
 class ContentDetectionService {
-
-   // API key
-  static const _geminiApiKey = 'AIzaSyAuviBWDGe_5J87oRb97K2k5ETk9ZHKZ6g';
-
-  // No API key needed — uses Firebase project credentials directly
-  late final GenerativeModel _geminiModel;
-
+  // late final GenerativeModel _geminiModel;
+  final _geminiModel = FirebaseAI.googleAI().generativeModel(model: 'gemini-2.5-flash-lite');
   final _db = FirebaseFirestore.instance;
 
   StreamSubscription? _accessibilitySubscription;
@@ -26,12 +21,11 @@ class ContentDetectionService {
   final Map<String, DateTime> _lastProcessed = {};
   static const _debounceDuration = Duration(seconds: 5);
 
-  ContentDetectionService() {
-    _geminiModel = GenerativeModel(
-      model: 'gemini-2.5-flash-lite',
-      apiKey: _geminiApiKey,
-    );
-  }
+  // ContentDetectionService() {
+  // _geminiModel = FirebaseAI.googleAI().generativeModel(
+  //   model: '',
+  // );
+  // }
 
   Future<void> start() async {
     final prefs = await SharedPreferences.getInstance();
