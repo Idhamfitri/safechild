@@ -86,41 +86,8 @@ xmlns:tools="http://schemas.android.com/tools">
             </intent-filter>
         </service>
 
-         <!-- ── Module 2 & 3: Accessibility Service (placeholder for Module 2/3) ──
-             Uncomment and implement when building Module 2/3.
-             The service class SafeChildAccessibilityService must be created
-             in android/app/src/main/kotlin/.../ -->
         
         
-        <!-- <service
-            android:name="com.flutter_accessibility_service.AccessibilityService"
-            android:exported="true"
-            android:label="SafeChild"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service> -->
-
-
-
-<!-- REPAIR OPTION 2 -->
-<!-- <service
-    android:name=".SafeChildAccessibilityService"
-    android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-    android:exported="true">
-    <intent-filter>
-        <action android:name="android.accessibilityservice.AccessibilityService" />
-    </intent-filter>
-    <meta-data
-        android:name="android.accessibilityservice"
-        android:resource="@xml/accessibility_service_config" />
-</service> -->
-
-<!-- REPAIR OPTION 1 -->
 
     <service
         android:name="slayer.accessibility.service.flutter_accessibility_service.AccessibilityListener"

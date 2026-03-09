@@ -1,21 +1,9 @@
-// lib/models/incident_model.dart
-// UPDATED for Module 2:
-// Categories now include 'toxic' and 'threatening' — exactly what Gemini returns.
-// Old categories (violence, adult etc.) kept for future modules.
-// detection_model is now 'gemini' | 'offline_backup' matching Module 2 workflow.
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum IncidentCategory {
   toxic,        // Module 2 — general harmful/toxic content
   threatening,  // Module 2 — threatening content (bullying, threats)
-  violence,
-  adult,
-  gambling,
-  drugs,
-  bullying,
-  unknown,
 }
 
 extension IncidentCategoryX on IncidentCategory {
@@ -23,12 +11,6 @@ extension IncidentCategoryX on IncidentCategory {
     switch (this) {
       case IncidentCategory.toxic:       return 'toxic';
       case IncidentCategory.threatening: return 'threatening';
-      case IncidentCategory.violence:    return 'violence';
-      case IncidentCategory.adult:       return 'adult';
-      case IncidentCategory.gambling:    return 'gambling';
-      case IncidentCategory.drugs:       return 'drugs';
-      case IncidentCategory.bullying:    return 'bullying';
-      case IncidentCategory.unknown:     return 'unknown';
     }
   }
 
@@ -36,12 +18,6 @@ extension IncidentCategoryX on IncidentCategory {
     switch (this) {
       case IncidentCategory.toxic:       return 'Toxic Content';
       case IncidentCategory.threatening: return 'Threatening';
-      case IncidentCategory.violence:    return 'Violence';
-      case IncidentCategory.adult:       return 'Adult Content';
-      case IncidentCategory.gambling:    return 'Gambling';
-      case IncidentCategory.drugs:       return 'Drugs';
-      case IncidentCategory.bullying:    return 'Bullying';
-      case IncidentCategory.unknown:     return 'Unknown';
     }
   }
 
@@ -49,12 +25,6 @@ extension IncidentCategoryX on IncidentCategory {
     switch (this) {
       case IncidentCategory.toxic:       return const Color(0xFFE65100);
       case IncidentCategory.threatening: return const Color(0xFFD32F2F);
-      case IncidentCategory.violence:    return const Color(0xFFD32F2F);
-      case IncidentCategory.adult:       return const Color(0xFFE91E63);
-      case IncidentCategory.gambling:    return const Color(0xFF6A1B9A);
-      case IncidentCategory.drugs:       return const Color(0xFF1565C0);
-      case IncidentCategory.bullying:    return const Color(0xFFE65100);
-      case IncidentCategory.unknown:     return const Color(0xFF757575);
     }
   }
 
@@ -62,12 +32,6 @@ extension IncidentCategoryX on IncidentCategory {
     switch (this) {
       case IncidentCategory.toxic:       return Icons.warning_amber_outlined;
       case IncidentCategory.threatening: return Icons.gpp_bad_outlined;
-      case IncidentCategory.violence:    return Icons.dangerous_outlined;
-      case IncidentCategory.adult:       return Icons.no_adult_content_outlined;
-      case IncidentCategory.gambling:    return Icons.casino_outlined;
-      case IncidentCategory.drugs:       return Icons.medication_outlined;
-      case IncidentCategory.bullying:    return Icons.person_off_outlined;
-      case IncidentCategory.unknown:     return Icons.help_outline;
     }
   }
 }
@@ -76,12 +40,7 @@ IncidentCategory _catFromString(String? s) {
   switch (s) {
     case 'toxic':       return IncidentCategory.toxic;
     case 'threatening': return IncidentCategory.threatening;
-    case 'violence':    return IncidentCategory.violence;
-    case 'adult':       return IncidentCategory.adult;
-    case 'gambling':    return IncidentCategory.gambling;
-    case 'drugs':       return IncidentCategory.drugs;
-    case 'bullying':    return IncidentCategory.bullying;
-    default:            return IncidentCategory.unknown;
+    default:            return IncidentCategory.toxic;
   }
 }
 
@@ -89,10 +48,11 @@ class IncidentModel {
   final String           incidentId;
   final String           deviceId;
   final String           textSummary;
+  final String           description;   
   final String           source;
   final double           confidenceScore;
   final IncidentCategory category;
-  final String           detectionModel; // 'gemini' | 'offline_backup'
+  final String           detectionModel;
   final DateTime         detectedAt;
   final bool             isReviewed;
   final DateTime?        reviewedAt;
@@ -103,6 +63,7 @@ class IncidentModel {
     required this.incidentId,
     required this.deviceId,
     required this.textSummary,
+    required this.description,
     required this.source,
     required this.confidenceScore,
     required this.category,
@@ -121,6 +82,7 @@ class IncidentModel {
       incidentId:      doc.id,
       deviceId:        d['device_id']        ?? '',
       textSummary:     d['text_summary']      ?? '',
+      description:     d['description']       ?? '',   // ← new field
       source:          d['source']            ?? '',
       confidenceScore: (d['confidence_score'] ?? 0.0).toDouble(),
       category:        _catFromString(d['category']),
@@ -140,6 +102,7 @@ class IncidentModel {
   Map<String, dynamic> toFirestore() => {
         'device_id':        deviceId,
         'text_summary':     textSummary,
+        'description':      description,   // ← new field
         'source':           source,
         'confidence_score': confidenceScore,
         'category':         category.value,
@@ -159,42 +122,5 @@ class IncidentModel {
     if (confidenceScore >= 0.75) return 'High';
     if (confidenceScore >= 0.50) return 'Medium';
     return 'Low';
-  }
-
-  static List<IncidentModel> dummies(String deviceId) {
-    final now = DateTime.now();
-    return [
-      IncidentModel(
-        incidentId: 'i1', deviceId: deviceId,
-        textSummary: 'Threatening content detected in WhatsApp',
-        source: 'com.whatsapp', confidenceScore: 0.87,
-        category: IncidentCategory.threatening,
-        detectionModel: 'gemini',
-        detectedAt: now.subtract(const Duration(hours: 1, minutes: 30)),
-        isReviewed: false, isAlertSend: true,
-        alertSendAt: now.subtract(const Duration(hours: 1, minutes: 29)),
-      ),
-      IncidentModel(
-        incidentId: 'i2', deviceId: deviceId,
-        textSummary: 'Toxic content detected in Chrome',
-        source: 'com.android.chrome', confidenceScore: 0.76,
-        category: IncidentCategory.toxic,
-        detectionModel: 'gemini',
-        detectedAt: now.subtract(const Duration(hours: 3)),
-        isReviewed: false, isAlertSend: true,
-        alertSendAt: now.subtract(const Duration(hours: 2, minutes: 59)),
-      ),
-      IncidentModel(
-        incidentId: 'i3', deviceId: deviceId,
-        textSummary: 'Toxic content detected in Instagram',
-        source: 'com.instagram.android', confidenceScore: 0.61,
-        category: IncidentCategory.toxic,
-        detectionModel: 'gemini',
-        detectedAt: now.subtract(const Duration(days: 1, hours: 2)),
-        isReviewed: true,
-        reviewedAt: now.subtract(const Duration(days: 1, hours: 1)),
-        isAlertSend: false,
-      ),
-    ];
   }
 }

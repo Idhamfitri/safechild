@@ -47,6 +47,13 @@ class BypassEventService {
   Future<void> markReviewed(String bypassId) =>
       _col.doc(bypassId).update({'is_reviewed': true});
 
+  Future<void> deleteBypassEvent(String bypassId) async {
+  await FirebaseFirestore.instance
+      .collection('bypass_events')
+      .doc(bypassId)
+      .delete();
+}
+
   // ── Mark all events for a device as reviewed ──────────────────────────────
   Future<void> markAllReviewed(String deviceId) async {
     final snap = await _col

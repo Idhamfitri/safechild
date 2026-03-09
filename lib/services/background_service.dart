@@ -1,26 +1,6 @@
 // lib/services/background_service.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// Manages the SafeChild foreground service on the child device.
-//
-// What it does:
-//   1. Shows a persistent notification: "SafeChild is protecting this device"
-//   2. Sends a heartbeat to Firestore every 10 minutes:
-//      - signal_status: 'active'
-//      - safechild_running: true
-//      - device_admin_active: from NativeChannelService
-//      - accessibility_active: from NativeChannelService
-//   3. Queries UsageStatsManager and writes today's app usage to:
-//      screen_time/{deviceId}/daily/{YYYY-MM-DD}
-//   4. Updates child_devices/{deviceId}.last_seen
-//
-// Started from ChildActiveScreen.initState() after child reaches active state.
-// Restarts automatically on device reboot via SafeChildBootReceiver.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import 'dart:async';
 import 'dart:ui';
-
-import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,7 +9,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:intl/intl.dart';
 import 'native_channel_service.dart';
 
-// ─── Notification channel ─────────────────────────────────────────────────────
+
 const _kNotifChannelId   = 'safechild_monitoring';
 const _kNotifChannelName = 'SafeChild Monitoring';
 const _kNotifId          = 888;
@@ -83,10 +63,7 @@ class BackgroundServiceManager {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Background isolate entry point
-// This runs in a SEPARATE Dart isolate — no direct access to widget tree.
-// ─────────────────────────────────────────────────────────────────────────────
+
 @pragma('vm:entry-point')
 Future<void> onStart(ServiceInstance service) async {
   // Required for background isolate
@@ -194,7 +171,7 @@ Future<void> _writeUsageStats(
           }).toList(),
     });
   } catch (_) {
-    // Ignore write errors silently
+
   }
 }
 

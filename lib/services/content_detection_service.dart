@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_ai/firebase_ai.dart';
@@ -8,24 +7,17 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-// import 'package:google_generative_ai/google_generative_ai.dart';
+
 
 class ContentDetectionService {
-  // late final GenerativeModel _geminiModel;
+  
   final _geminiModel = FirebaseAI.googleAI().generativeModel(model: 'gemini-2.5-flash-lite');
   final _db = FirebaseFirestore.instance;
-
   StreamSubscription? _accessibilitySubscription;
   String?             _deviceId;
-
   final Map<String, DateTime> _lastProcessed = {};
   static const _debounceDuration = Duration(seconds: 5);
 
-  // ContentDetectionService() {
-  // _geminiModel = FirebaseAI.googleAI().generativeModel(
-  //   model: '',
-  // );
-  // }
 
   Future<void> start() async {
     final prefs = await SharedPreferences.getInstance();
@@ -68,50 +60,9 @@ class ContentDetectionService {
     debugPrint('SAFECHILD: detection stopped');
   }
 
-  // void _onAccessibilityEvent(AccessibilityEvent event) {
-  //   final sourceApp = event.packageName ?? 'unknown';
-
-  //   // Plugin converts null capturedText to string "null" — filter it out
-  //   String? rawText;
-
-  //   final mainText = event.text;
-  //   if (mainText != null &&
-  //       mainText != 'null' &&
-  //       mainText.trim().isNotEmpty) {
-  //     rawText = mainText;
-  //   }
-
-  //   // Fallback — check subNodes if main text is empty
-  //   if (rawText == null && event.subNodes != null) {
-  //     final subTexts = event.subNodes!
-  //         .where((n) =>
-  //             n.text != null &&
-  //             n.text != 'null' &&
-  //             n.text!.trim().isNotEmpty)
-  //         .map((n) => n.text!)
-  //         .join(' ');
-  //     if (subTexts.isNotEmpty) rawText = subTexts;
-  //   }
-
-  //   debugPrint('SAFECHILD: event from $sourceApp → "${rawText ?? "(empty)"}"');
-
-  //   if (rawText == null) return;
-
-  //   final lastTime = _lastProcessed[sourceApp];
-  //   if (lastTime != null &&
-  //       DateTime.now().difference(lastTime) < _debounceDuration) {
-  //     debugPrint('SAFECHILD: debounced $sourceApp — skipping');
-  //     return;
-  //   }
-  //   _lastProcessed[sourceApp] = DateTime.now();
-
-  //   _processText(rawText, sourceApp);
-  // }
 
 
-
-
-  // Packages to ignore — system UI, launchers, SafeChild itself
+  // Packages to ignore 
 static const _ignoredPackages = {
   'com.android.systemui',
   'com.android.launcher3',
@@ -123,7 +74,7 @@ static const _ignoredPackages = {
 void _onAccessibilityEvent(AccessibilityEvent event) {
   final sourceApp = event.packageName ?? 'unknown';
 
-  // Skip system packages — just noise
+  // Skip system packages 
   if (_ignoredPackages.any((pkg) => sourceApp.contains(pkg))) return;
 
   String? rawText;
@@ -214,7 +165,7 @@ String _cleanText(String raw) {
     debugPrint('SAFECHILD: calling Gemini for "$text"');
     try {
       final prompt = '''
-Classify this text from a child\'s device.
+Classify this text from a child's device.
 It may be Malay, English or mixed slang.
 Reply ONLY in this exact JSON format with no extra text:
 {"category":"safe/toxic/threatening","confidence":0.0}
@@ -228,7 +179,7 @@ Text: "$text"
       debugPrint('SAFECHILD: gemini response = $result');
 
       if (result != null && result.isNotEmpty) {
-        _parseAndHandle(result, sourceApp);
+        _parseAndHandle(result, sourceApp, rawText: text);
       } else {
         debugPrint('SAFECHILD: gemini returned empty response');
       }
@@ -237,7 +188,7 @@ Text: "$text"
     }
   }
 
-  void _parseAndHandle(String jsonText, String sourceApp) {
+  void _parseAndHandle(String jsonText, String sourceApp, {required String rawText}) {
     try {
       final cleaned = jsonText
           .trim()
@@ -251,14 +202,15 @@ Text: "$text"
 
       debugPrint('SAFECHILD: category=$category confidence=$confidence');
 
-      _handleResult(category, confidence, sourceApp, 'gemini');
+      _handleResult(category, confidence, sourceApp, 'gemini', rawText: rawText);
     } catch (e) {
       debugPrint('SAFECHILD: JSON parse error — $e — raw: $jsonText');
     }
   }
 
   void _handleResult(
-      String category, double confidence, String sourceApp, String model) {
+      String category, double confidence, String sourceApp, String model,
+      {required String rawText}) {
     if (confidence < 0.5 || category == 'safe') {
       debugPrint('SAFECHILD: safe or low confidence — not logged');
       return;
@@ -272,6 +224,7 @@ Text: "$text"
 
     _logIncident(
       summary:    summary,
+      description: rawText,
       source:     sourceApp,
       confidence: confidence,
       category:   category,
@@ -295,7 +248,9 @@ Text: "$text"
     if (packageName.contains('youtube'))   return 'YouTube';
     if (packageName.contains('facebook'))  return 'Facebook';
     if (packageName.contains('twitter') ||
-        packageName.contains('x.com'))     return 'X / Twitter';
+        packageName.contains('x.com')) {
+      return 'X / Twitter';
+    }
     final parts = packageName.split('.');
     return parts.isNotEmpty
         ? parts.last[0].toUpperCase() + parts.last.substring(1)
@@ -305,6 +260,7 @@ Text: "$text"
   Future<void> _logIncident({
     required String summary,
     required String source,
+    required String description,
     required double confidence,
     required String category,
     required String model,
@@ -316,6 +272,7 @@ Text: "$text"
       await _db.collection('incidents').add({
         'device_id':        _deviceId,
         'text_summary':     summary,
+        'description':      description,
         'source':           source,
         'confidence_score': confidence,
         'category':         category,

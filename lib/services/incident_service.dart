@@ -47,6 +47,13 @@ class IncidentService {
         'is_reviewed': true,
         'reviewed_at': FieldValue.serverTimestamp(),
       });
+  
+  Future<void> deleteIncident(String incidentId) async {
+  await FirebaseFirestore.instance
+      .collection('incidents')
+      .doc(incidentId)
+      .delete();
+}
 
   Future<void> markAllReviewed(String deviceId) async {
     final snap = await _col

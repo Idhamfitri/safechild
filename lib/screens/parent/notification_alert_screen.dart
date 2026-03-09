@@ -1,15 +1,3 @@
-// lib/screens/parent/notification_alert_screen.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// Displays real-time alerts from TWO Firestore collections:
-//   1. bypass_events   → written by Module 3 anti-bypass detection
-//   2. incidents       → written by Module 2 content detection
-//
-// Uses Firestore Snapshot Listeners (MODULE3_WORKFLOW Part 3) so the list
-// updates instantly when a new event is written on the child device.
-//
-// Dummy data is shown automatically if no real documents exist yet.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/bypass_event_model.dart';
@@ -23,18 +11,20 @@ class _AlertEntry {
   final String    id;
   final String    title;
   final String    subtitle;
+  final String    description;     // raw captured text (incidents only)
   final IconData  icon;
   final Color     color;
   final DateTime  timestamp;
   final bool      isRead;
-  final bool      isBlocked;       // bypass: was it blocked? incident: n/a
-  final double?   confidenceScore; // only for incidents
+  final bool      isBlocked;
+  final double?   confidenceScore;
   final _AlertKind kind;
 
   const _AlertEntry({
     required this.id,
     required this.title,
     required this.subtitle,
+    required this.description,
     required this.icon,
     required this.color,
     required this.timestamp,
@@ -64,11 +54,11 @@ class NotificationAlertScreen extends StatefulWidget {
 
 class _NotificationAlertScreenState
     extends State<NotificationAlertScreen> {
-  final _bypassService  = BypassEventService();
+  final _bypassService   = BypassEventService();
   final _incidentService = IncidentService();
 
   bool _showWeekly    = false;
-  bool _showBypass    = true;   // filter toggles
+  bool _showBypass    = true;
   bool _showIncidents = true;
 
   // ── Mark reviewed ─────────────────────────────────────────────────────────
@@ -102,15 +92,16 @@ class _NotificationAlertScreenState
       for (final b in bypasses) {
         if (b.detectedAt.isBefore(cutoff)) continue;
         entries.add(_AlertEntry(
-          id:        b.bypassId,
-          title:     b.eventType.displayLabel,
-          subtitle:  b.eventDescription,
-          icon:      b.eventType.icon,
-          color:     b.eventType.color,
-          timestamp: b.detectedAt,
-          isRead:    b.isReviewed,
-          isBlocked: b.isBlocked,
-          kind:      _AlertKind.bypass,
+          id:          b.bypassId,
+          title:       b.eventType.displayLabel,
+          subtitle:    b.eventDescription,
+          description: '',
+          icon:        b.eventType.icon,
+          color:       b.eventType.color,
+          timestamp:   b.detectedAt,
+          isRead:      b.isReviewed,
+          isBlocked:   b.isBlocked,
+          kind:        _AlertKind.bypass,
         ));
       }
     }
@@ -122,6 +113,7 @@ class _NotificationAlertScreenState
           id:              i.incidentId,
           title:           '${i.category.displayLabel} Detected',
           subtitle:        i.textSummary,
+          description:     i.description,  // raw captured text
           icon:            i.category.icon,
           color:           i.category.color,
           timestamp:       i.detectedAt,
@@ -145,45 +137,31 @@ class _NotificationAlertScreenState
         return StreamBuilder<List<IncidentModel>>(
           stream: _incidentService.watchIncidents(widget.deviceId),
           builder: (_, incidentSnap) {
-            // Use real data if available, dummy data if empty
-            final bypasses = (bypassSnap.data?.isNotEmpty ?? false)
-                ? bypassSnap.data!
-                : BypassEventModel.dummies(widget.deviceId);
+            // Loading state
+            if (bypassSnap.connectionState == ConnectionState.waiting ||
+                incidentSnap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-            final incidents = (incidentSnap.data?.isNotEmpty ?? false)
-                ? incidentSnap.data!
-                : IncidentModel.dummies(widget.deviceId);
-
-            final bool usingDummy = (bypassSnap.data?.isEmpty ?? true) ||
-                (incidentSnap.data?.isEmpty ?? true);
-
-            final entries  = _merge(bypasses, incidents);
-            final unread   = entries.where((e) => !e.isRead).length;
+            // Real data only — no dummy fallback
+            final bypasses  = bypassSnap.data  ?? [];
+            final incidents = incidentSnap.data ?? [];
+            final entries   = _merge(bypasses, incidents);
+            final unread    = entries.where((e) => !e.isRead).length;
 
             return SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Header ──────────────────────────────────────────
                   _buildHeader(entries, unread),
                   const SizedBox(height: 12),
-
-                  // ── Filter chips ─────────────────────────────────────
                   _buildFilterRow(),
                   const SizedBox(height: 14),
-
-                  // ── Alert list ───────────────────────────────────────
                   if (entries.isEmpty)
                     _buildEmptyState()
                   else
                     _buildAlertList(entries),
-
-                  // ── Dummy data note ──────────────────────────────────
-                  if (usingDummy) ...[
-                    const SizedBox(height: 16),
-                    _buildDummyNote(),
-                  ],
                 ],
               ),
             );
@@ -223,8 +201,7 @@ class _NotificationAlertScreenState
           ]),
           Text(
             _showWeekly ? 'This Week' : 'Today',
-            style: const TextStyle(
-                fontSize: 13, color: AppColors.textSub),
+            style: const TextStyle(fontSize: 13, color: AppColors.textSub),
           ),
         ]),
       ),
@@ -253,19 +230,19 @@ class _NotificationAlertScreenState
   Widget _buildFilterRow() {
     return Row(children: [
       _FilterChip(
-        label: 'Bypass',
-        icon: Icons.gpp_bad_outlined,
+        label:  'Bypass',
+        icon:   Icons.gpp_bad_outlined,
         active: _showBypass,
-        color: AppColors.error,
-        onTap: () => setState(() => _showBypass = !_showBypass),
+        color:  AppColors.error,
+        onTap:  () => setState(() => _showBypass = !_showBypass),
       ),
       const SizedBox(width: 8),
       _FilterChip(
-        label: 'Content',
-        icon: Icons.warning_amber_outlined,
+        label:  'Content',
+        icon:   Icons.warning_amber_outlined,
         active: _showIncidents,
-        color: const Color(0xFFE65100),
-        onTap: () => setState(() => _showIncidents = !_showIncidents),
+        color:  const Color(0xFFE65100),
+        onTap:  () => setState(() => _showIncidents = !_showIncidents),
       ),
     ]);
   }
@@ -277,7 +254,6 @@ class _NotificationAlertScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Mark all read button
         if (unread.isNotEmpty)
           Align(
             alignment: Alignment.centerRight,
@@ -292,7 +268,7 @@ class _NotificationAlertScreenState
           ),
 
         ...entries.map((e) => _AlertTile(
-              entry: e,
+              entry:      e,
               onMarkRead: () => _markRead(e),
             )),
       ],
@@ -317,49 +293,19 @@ class _NotificationAlertScreenState
               _showWeekly
                   ? 'No alerts this week.'
                   : 'No alerts today. Device is safe.',
-              style: const TextStyle(
-                  fontSize: 13, color: AppColors.textSub),
+              style: const TextStyle(fontSize: 13, color: AppColors.textSub),
             ),
           ]),
-        ),
-      );
-
-  Widget _buildDummyNote() => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.statusPending.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: AppColors.statusPending.withOpacity(0.25)),
-        ),
-        child: const Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.construction_outlined,
-                size: 14, color: AppColors.statusPending),
-            SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Sample alerts shown. Real alerts will be written by '
-                'Module 2 (Content Detection) and Module 3 (Anti-Bypass) '
-                'from the child device background services.',
-                style: TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSub,
-                    height: 1.5),
-              ),
-            ),
-          ],
         ),
       );
 }
 
 // ─── Filter chip ──────────────────────────────────────────────────────────────
 class _FilterChip extends StatelessWidget {
-  final String   label;
-  final IconData icon;
-  final bool     active;
-  final Color    color;
+  final String       label;
+  final IconData     icon;
+  final bool         active;
+  final Color        color;
   final VoidCallback onTap;
 
   const _FilterChip({
@@ -375,8 +321,7 @@ class _FilterChip extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(
-              horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: active ? color.withOpacity(0.12) : Colors.white,
             borderRadius: BorderRadius.circular(20),
@@ -386,15 +331,15 @@ class _FilterChip extends StatelessWidget {
             ),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, size: 13, color: active ? color : AppColors.textSub),
+            Icon(icon, size: 13,
+                color: active ? color : AppColors.textSub),
             const SizedBox(width: 5),
             Text(label,
                 style: TextStyle(
                     fontSize: 12,
                     color: active ? color : AppColors.textSub,
-                    fontWeight: active
-                        ? FontWeight.w600
-                        : FontWeight.normal)),
+                    fontWeight:
+                        active ? FontWeight.w600 : FontWeight.normal)),
           ]),
         ),
       );
@@ -430,7 +375,8 @@ class _AlertTile extends StatelessWidget {
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
-            blurRadius: 4, offset: const Offset(0, 2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -463,15 +409,17 @@ class _AlertTile extends StatelessWidget {
                                 : FontWeight.w700,
                             color: AppColors.textPrimary)),
                   ),
-                  // Unread dot
                   if (!entry.isRead)
                     Container(
                       width: 8, height: 8,
                       decoration: BoxDecoration(
-                          color: entry.color, shape: BoxShape.circle),
+                          color: entry.color,
+                          shape: BoxShape.circle),
                     ),
                 ]),
                 const SizedBox(height: 3),
+
+                // Summary
                 Text(entry.subtitle,
                     style: const TextStyle(
                         fontSize: 12,
@@ -479,6 +427,41 @@ class _AlertTile extends StatelessWidget {
                         height: 1.4),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis),
+
+                // Raw captured text (incidents only)
+                if (entry.kind == _AlertKind.incident &&
+                    entry.description.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: entry.color.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: entry.color.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.format_quote,
+                            size: 13,
+                            color: entry.color.withOpacity(0.6)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            entry.description,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: entry.color,
+                                fontStyle: FontStyle.italic),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 6),
 
                 // Bottom row: time + badges
@@ -511,7 +494,6 @@ class _AlertTile extends StatelessWidget {
 
                   const Spacer(),
 
-                  // Mark read button
                   if (!entry.isRead)
                     GestureDetector(
                       onTap: onMarkRead,
@@ -532,8 +514,7 @@ class _AlertTile extends StatelessWidget {
   }
 
   Widget _badge(String label, Color color) => Container(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 7, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
         margin: const EdgeInsets.only(right: 4),
         decoration: BoxDecoration(
           color: color.withOpacity(0.12),
