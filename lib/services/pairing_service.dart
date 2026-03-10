@@ -21,10 +21,8 @@ class PairingService {
   CollectionReference<Map<String, dynamic>> get _links =>
       _db.collection('parent_child_links');
 
-  // ══════════════════════════════════════════════════════════════════════════
-  //  PARENT SIDE
-  // ══════════════════════════════════════════════════════════════════════════
 
+  //  PARENT SIDE
   Future<ParentChildLinkModel> createChildAndGeneratePairingCode({
     required String parentId,
     required String childFullName,
@@ -37,8 +35,7 @@ class PairingService {
     final dId    = deviceId ?? _uuid.v4();
     final linkId = _uuid.v4();
 
-    // Write the initial child_devices doc directly — avoids constructing
-    // ChildDeviceModel with all required hardware fields we don't have yet.
+    
     await _devices.doc(dId).set({
       'device_name':       deviceName,
       'full_name':         childFullName,
@@ -64,12 +61,11 @@ class PairingService {
     return link;
   }
 
-  /// Real-time listener — fires whenever any field on the link changes.
-  /// Parent's PairingCodeScreen subscribes to track setup phases.
+ 
   Stream<ParentChildLinkModel> watchLinkStatus(String linkId) =>
       _links.doc(linkId).snapshots().map(ParentChildLinkModel.fromFirestore);
 
-  /// Stream all active links for a parent.
+ 
   Stream<List<ParentChildLinkModel>> watchLinkedDevices(String parentId) =>
       _links
           .where('parent_id',    isEqualTo: parentId)
@@ -93,12 +89,9 @@ class PairingService {
   Future<void> unlinkDevice(String linkId) =>
       _links.doc(linkId).update({'link_status': 'removed'});
 
-  // ══════════════════════════════════════════════════════════════════════════
+ 
   //  CHILD SIDE
-  // ══════════════════════════════════════════════════════════════════════════
-
-  /// Matches 6-digit code, updates device hardware info, flips link to linked.
-  /// Also sets setup_phase = 'paired' so parent sees child is in permission setup.
+  // Matches 6-digit code, updates device hardware info, flips link to linked.
   Future<String?> submitPairingCode(String code) async {
     try {
       final snap = await _links

@@ -1,8 +1,4 @@
 // lib/screens/child/permission_setup_screen.dart
-// Simple permission setup wizard.
-// Each step: Allow button (opens correct settings page) + Skip for now button.
-// Device Admin step commented out — will be re-enabled in Module 4.
-// Uses android_intent_plus to navigate to exact system settings pages.
 
 import 'dart:async';
 import 'package:android_intent_plus/android_intent.dart';
@@ -34,12 +30,12 @@ enum _PermType {
   systemAlertWindow,
   usageAccess,
   accessibility,
-  // deviceAdmin,   // commented out — re-enable in Module 4
+  // deviceAdmin,   
 }
 
 enum _StepStatus { idle, granted, skipped }
 
-// Device Admin step removed from list — commented out until Module 4
+
 const _steps = [
   _PermStep(
     icon: Icons.notifications_active_outlined, title: 'Notifications',
@@ -90,7 +86,7 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
   int  _current = 0;
   bool _loading = false;
 
-  // Only 4 steps now — device admin removed
+  
   final _status = List<_StepStatus>.filled(4, _StepStatus.idle);
 
   @override
@@ -168,8 +164,6 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
           break;
 
         case _PermType.accessibility:
-          // Use plugin method — opens settings AND waits for grant
-          // More reliable than android_intent_plus for this specific permission
           final granted = await FlutterAccessibilityService
               .requestAccessibilityPermission();
           debugPrint('SAFECHILD: accessibility granted = $granted');
@@ -184,7 +178,7 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen> {
       }
       _apply(_StepStatus.granted);
     } catch (_) {
-      // If intent fails for any reason fall back to app settings
+     
       await openAppSettings();
       _apply(_StepStatus.granted);
     } finally {

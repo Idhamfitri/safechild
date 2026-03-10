@@ -1,25 +1,29 @@
 // lib/services/background_service.dart
+// Owns ALL heartbeat logic. Survives app kill, cache clear, and reboots.
 import 'dart:async';
 import 'dart:ui';
-import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:battery_plus/battery_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'native_channel_service.dart';
-
 
 const _kNotifChannelId   = 'safechild_monitoring';
 const _kNotifChannelName = 'SafeChild Monitoring';
 const _kNotifId          = 888;
 
 class BackgroundServiceManager {
-  // ── Initialize and start the foreground service ───────────────────────────
+
   static Future<void> initialize() async {
     final service = FlutterBackgroundService();
 
-    // Android foreground notification setup
+    // Skip if already running
+    if (await service.isRunning()) return;
+
+    // Create notification channel
     const notifChannel = AndroidNotificationChannel(
       _kNotifChannelId,
       _kNotifChannelName,
@@ -28,22 +32,21 @@ class BackgroundServiceManager {
     );
 
     final notifPlugin = FlutterLocalNotificationsPlugin();
-    await notifPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(notifChannel);
+    final androidPlugin = notifPlugin
+    .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.createNotificationChannel(notifChannel);
 
     await service.configure(
       androidConfiguration: AndroidConfiguration(
-        onStart:             onStart,
-        autoStart:           true,
-        isForegroundMode:    true,
-        notificationChannelId: _kNotifChannelId,
-        initialNotificationTitle: 'SafeChild Active',
-        initialNotificationContent: 'Protecting this device in the background',
+        onStart:                         onStart,
+        autoStart:                       true,
+        isForegroundMode:                true,
+        notificationChannelId:           _kNotifChannelId,
+        initialNotificationTitle:        'SafeChild Active',
+        initialNotificationContent:      'Protecting this device in the background',
         foregroundServiceNotificationId: _kNotifId,
-        foregroundServiceTypes: [AndroidForegroundType.dataSync],
-        autoStartOnBoot: true,
+        foregroundServiceTypes:          [AndroidForegroundType.dataSync],
+        autoStartOnBoot:                 true,
       ),
       iosConfiguration: IosConfiguration(autoStart: false),
     );
@@ -51,48 +54,43 @@ class BackgroundServiceManager {
     await service.startService();
   }
 
-  // ── Stop the service (called when device is unlinked) ─────────────────────
   static Future<void> stop() async {
-    final service = FlutterBackgroundService();
-    service.invoke('stopService');
+    FlutterBackgroundService().invoke('stopService');
   }
 
-  // ── Check if service is running ───────────────────────────────────────────
   static Future<bool> isRunning() async {
     return FlutterBackgroundService().isRunning();
   }
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Background isolate entry point — runs in a SEPARATE Dart isolate.
+// No access to widget tree. Must reinitialise Firebase.
+// ─────────────────────────────────────────────────────────────────────────────
 @pragma('vm:entry-point')
 Future<void> onStart(ServiceInstance service) async {
-  // Required for background isolate
   DartPluginRegistrant.ensureInitialized();
 
-  // Initialize Firebase in this isolate
+  // Init Firebase in this isolate
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp();
     }
-  } catch (e) {
-    // Firebase already initialized or options not available
-  }
+  } catch (_) {}
 
-  // Handle stop command from Flutter side
-  service.on('stopService').listen((_) {
-    service.stopSelf();
-  });
+  // Stop command from app
+  service.on('stopService').listen((_) => service.stopSelf());
 
-  // ── Send first heartbeat immediately on start ─────────────────────────────
+  // First heartbeat immediately
   await _sendHeartbeat(service);
 
-  // ── Then repeat every 10 minutes ─────────────────────────────────────────
+  // Then every 10 minutes
   Timer.periodic(const Duration(minutes: 10), (_) async {
     await _sendHeartbeat(service);
   });
 }
 
-// ─── Core heartbeat logic ─────────────────────────────────────────────────────
+// ── Heartbeat ─────────────────────────────────────────────────────────────────
 Future<void> _sendHeartbeat(ServiceInstance service) async {
   try {
     final prefs    = await SharedPreferences.getInstance();
@@ -104,45 +102,50 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
     final db  = FirebaseFirestore.instance;
     final now = DateTime.now();
 
-    // ── Check real permission states via MethodChannel ────────────────────
+    // Real permission states via MethodChannel
     final usageGranted      = await NativeChannelService.checkUsageAccessGranted();
     final accessibilityOn   = await NativeChannelService.checkAccessibilityEnabled();
     final deviceAdminActive = await NativeChannelService.checkDeviceAdminActive();
 
-    // ── Write heartbeat document ──────────────────────────────────────────
-    await db.collection('heartbeat').add({
+    // Battery level
+    int? batteryLevel;
+    try { batteryLevel = await Battery().batteryLevel; } catch (_) {}
+
+    // ── Upsert heartbeat — one doc per device, never duplicates ──────────
+    await db.collection('heartbeat').doc(deviceId).set({
       'device_id':            deviceId,
-      'timestamp':            Timestamp.fromDate(now),
+      'last_sync':            Timestamp.fromDate(now),
       'signal_status':        'active',
       'safechild_running':    true,
       'device_admin_active':  deviceAdminActive,
       'accessibility_active': accessibilityOn,
       'usage_access_granted': usageGranted,
-    });
+      if (batteryLevel != null) 'battery_level': batteryLevel,
+    }, SetOptions(merge: true));
 
     // ── Update child_devices last_seen ────────────────────────────────────
     await db.collection('child_devices').doc(deviceId).update({
       'last_seen': Timestamp.fromDate(now),
     });
 
-    // ── Query and write usage stats ───────────────────────────────────────
+    // ── Write usage stats if permission granted ───────────────────────────
     if (usageGranted) {
       await _writeUsageStats(db, deviceId, now);
     }
 
-    // Update service notification to show last heartbeat time
+    // ── Update notification with last sync time ───────────────────────────
     if (service is AndroidServiceInstance) {
       service.setForegroundNotificationInfo(
-        title: 'SafeChild Active',
-        content: 'Last check: ${_formatTime(now)}',
+        title:   'SafeChild Active',
+        content: 'Last sync: ${_formatTime(now)}',
       );
     }
-  } catch (e) {
-    // Silently continue — do not crash the service
+  } catch (_) {
+    // Silently continue — never crash the service
   }
 }
 
-// ─── Write usage stats to Firestore ──────────────────────────────────────────
+// ── Usage stats ───────────────────────────────────────────────────────────────
 Future<void> _writeUsageStats(
     FirebaseFirestore db, String deviceId, DateTime now) async {
   try {
@@ -160,23 +163,21 @@ Future<void> _writeUsageStats(
         stats.fold<int>(0, (sum, s) => sum + s.usageMinutes);
 
     await docRef.set({
-      'device_id':      deviceId,
-      'date':           dateKey,
-      'total_minutes':  totalMinutes,
-      'updated_at':     Timestamp.fromDate(now),
+      'device_id':     deviceId,
+      'date':          dateKey,
+      'total_minutes': totalMinutes,
+      'updated_at':    Timestamp.fromDate(now),
       'apps': stats.map((s) => {
-            'package_name': s.packageName,
-            'app_name':     s.appName,
+            'package_name':  s.packageName,
+            'app_name':      s.appName,
             'usage_minutes': s.usageMinutes,
           }).toList(),
     });
-  } catch (_) {
-
-  }
+  } catch (_) {}
 }
 
 String _formatTime(DateTime dt) {
-  final h  = dt.hour.toString().padLeft(2, '0');
-  final m  = dt.minute.toString().padLeft(2, '0');
+  final h = dt.hour.toString().padLeft(2, '0');
+  final m = dt.minute.toString().padLeft(2, '0');
   return '$h:$m';
 }

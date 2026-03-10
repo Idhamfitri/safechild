@@ -1,4 +1,9 @@
-
+// lib/models/bypass_event_model.dart
+// ─────────────────────────────────────────────────────────────────────────────
+// Maps to Firestore collection: bypass_events/{bypass_id}
+// Written instantly by the child device when a bypass attempt is detected.
+// Triggers immediate FCM notification to parent (Part 1, MODULE3_WORKFLOW).
+//
 // Schema (MODULE3_WORKFLOW Part 4):
 //   device_id         – which child device
 //   event_type        – "uninstall_attempt" | "settings_access" |

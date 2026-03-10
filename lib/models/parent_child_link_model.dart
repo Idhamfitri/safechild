@@ -41,8 +41,8 @@ class ParentChildLinkModel {
   final PairingStatus pairingStatus;
   final DateTime?     linkedAt;
   final LinkStatus    linkStatus;
-  final SetupPhase    setupPhase;     // NEW
-  final int           setupStep;      // NEW — 0-4 permission step index
+  final SetupPhase    setupPhase;    
+  final int           setupStep;      
 
   ParentChildLinkModel({
     required this.pCLinkId,

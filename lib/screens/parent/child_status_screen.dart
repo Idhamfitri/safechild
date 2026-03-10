@@ -1,10 +1,9 @@
+// lib/screens/parent/child_status_screen.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../models/bypass_event_model.dart';
 import '../../models/heartbeat_model.dart';
 import '../../models/incident_model.dart';
-import '../../services/bypass_event_service.dart';
 import '../../services/heartbeat_service.dart';
 import '../../services/incident_service.dart';
 import '../../utils/app_theme.dart';
@@ -25,9 +24,8 @@ class ChildStatusScreen extends StatefulWidget {
 
 class _ChildStatusScreenState extends State<ChildStatusScreen>
     with SingleTickerProviderStateMixin {
-  final _heartbeatService  = HeartbeatService();
-  final _incidentService   = IncidentService();
-  final _bypassService     = BypassEventService();
+  final _heartbeatService = HeartbeatService();
+  final _incidentService  = IncidentService();
   late  TabController _screenTimeTab;
 
   int _currentTab = 0;
@@ -119,14 +117,8 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
                 _RecentAppsSection(deviceId: widget.deviceId),
                 const SizedBox(height: 14),
                 _IncidentsSection(
-                  deviceId:  widget.deviceId,
-                  service:   _incidentService,
-                  onViewAll: () => setState(() => _currentTab = 1),
-                ),
-                const SizedBox(height: 14),
-                _BypassSection(
                   deviceId: widget.deviceId,
-                  service:  _bypassService,
+                  service:  _incidentService,
                 ),
                 const SizedBox(height: 24),
               ],
@@ -137,177 +129,23 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
     );
   }
 
-  // ── Tab 1 — Alerts ────────────────────────────────────────────────────────
-Widget _buildAlertsTab() {
-  return SingleChildScrollView(
-    padding: const EdgeInsets.all(16),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-
-        // ── Incidents container ──────────────────────────────────────────
-        const Text('Content Incidents',
+  // ── Tab 1 — Alerts (empty placeholder) ────────────────────────────────────
+  Widget _buildAlertsTab() {
+    return const Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.notifications_outlined, size: 64, color: Color(0xFFBDBDBD)),
+        SizedBox(height: 16),
+        Text('Alerts',
             style: TextStyle(
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
-                fontSize: 15,
                 color: AppColors.textPrimary)),
-        const SizedBox(height: 10),
-
-        StreamBuilder<List<IncidentModel>>(
-          stream: _incidentService.watchIncidents(widget.deviceId),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator()));
-            }
-
-            // Only unresolved (is_reviewed == false)
-            final incidents = (snap.data ?? [])
-                .where((i) => !i.isReviewed)
-                .toList();
-
-            if (incidents.isEmpty) {
-              return _buildEmptyCard(
-                icon: Icons.check_circle_outline,
-                message: 'No unresolved incidents',
-                sub: 'All content incidents have been reviewed.',
-              );
-            }
-
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.divider),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              // Fixed height container — scrollable inside
-              constraints: const BoxConstraints(maxHeight: 380),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  padding: EdgeInsets.zero,
-                  itemCount: incidents.length,
-                  separatorBuilder: (_, __) =>
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                  itemBuilder: (context, index) => _AlertsIncidentTile(
-                    incident: incidents[index],
-                    service:  _incidentService,
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-
-        const SizedBox(height: 24),
-
-        // ── Bypass Attempts container ────────────────────────────────────
-        const Text('Bypass Attempts',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: AppColors.textPrimary)),
-        const SizedBox(height: 10),
-
-        StreamBuilder<List<BypassEventModel>>(
-          stream: _bypassService.watchBypassEvents(widget.deviceId),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Center(
-                  child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator()));
-            }
-
-            // Only unresolved
-            final events = (snap.data ?? [])
-                .where((b) => !b.isReviewed)
-                .toList();
-
-            if (events.isEmpty) {
-              return _buildEmptyCard(
-                icon: Icons.verified_user_outlined,
-                message: 'No bypass attempts',
-                sub: 'No suspicious activity detected.',
-              );
-            }
-
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.divider),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              constraints: const BoxConstraints(maxHeight: 320),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  padding: EdgeInsets.zero,
-                  itemCount: events.length,
-                  separatorBuilder: (_, __) =>
-                      const Divider(height: 1, indent: 16, endIndent: 16),
-                  itemBuilder: (context, index) => _AlertsBypassTile(
-                    event:   events[index],
-                    service: _bypassService,
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-
-        const SizedBox(height: 24),
-      ],
-    ),
-  );
-}
-
-// ── Empty card helper ──────────────────────────────────────────────────────
-Widget _buildEmptyCard({
-  required IconData icon,
-  required String   message,
-  required String   sub,
-}) {
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.all(28),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: AppColors.divider),
-    ),
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 40, color: const Color(0xFF2E7D32)),
-      const SizedBox(height: 10),
-      Text(message,
-          style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary)),
-      const SizedBox(height: 4),
-      Text(sub,
-          style: const TextStyle(
-              fontSize: 12, color: AppColors.textSub)),
-    ]),
-  );
-}
+        SizedBox(height: 8),
+        Text('Incident alerts for this device will appear here.',
+            style: TextStyle(fontSize: 13, color: AppColors.textSub)),
+      ]),
+    );
+  }
 
   // ── Tab 2 — Settings (empty placeholder) ──────────────────────────────────
   Widget _buildSettingsTab() {
@@ -345,6 +183,8 @@ class _DeviceHeaderCard extends StatelessWidget {
     final androidVer   = deviceData?['android_version'] ?? '—';
     final dateCreated  = deviceData?['date_created'];
     final imageUrl     = deviceData?['image_url'] as String?;
+    // android_sdk — removed from display
+    // registration_token (FCM) — not displayed for security
 
     String createdLabel = '—';
     if (dateCreated != null) {
@@ -358,6 +198,7 @@ class _DeviceHeaderCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // Avatar + name + status
           Row(children: [
             Container(
               width: 64, height: 64,
@@ -478,6 +319,7 @@ class _DeviceStatusCard extends StatelessWidget {
 
           const Divider(height: 24),
 
+          // Battery
           Row(children: [
             Icon(hb.batteryIcon, color: hb.batteryColor, size: 20),
             const SizedBox(width: 8),
@@ -530,6 +372,9 @@ class _PermissionCard extends StatelessWidget {
     final bool notifications = permMap?['notifications'] == true;
     final bool overlay       = permMap?['overlay']       == true;
     final bool usageAccess   = permMap?['usage_access']  == true;
+
+    // ── Device Admin — commented out until Module 4 ───────────────────────
+    // final bool deviceAdmin = permMap?['device_admin'] == true;
 
     final lastUpdated = permMap?['last_updated'];
     String updatedLabel = '';
@@ -585,6 +430,14 @@ class _PermissionCard extends StatelessWidget {
               label: 'Usage Access',
               isOn:  usageAccess),
 
+          // ── Device Admin — commented out until Module 4 ─────────────────
+          // const SizedBox(height: 10),
+          // _StatusRow(
+          //   icon:  Icons.admin_panel_settings_outlined,
+          //   label: 'Device Admin',
+          //   isOn:  deviceAdmin,
+          // ),
+
           if (!accessibility)
             _WarningBanner(
                 message: 'Accessibility Service is OFF — '
@@ -629,8 +482,8 @@ class _ScreenTimeSection extends StatelessWidget {
                 color: AppColors.primary,
                 borderRadius: BorderRadius.circular(10),
               ),
-              labelColor:           Colors.white,
-              unselectedLabelColor: AppColors.textSub,
+              labelColor:            Colors.white,
+              unselectedLabelColor:  AppColors.textSub,
               labelStyle: const TextStyle(
                   fontSize: 13, fontWeight: FontWeight.w600),
               dividerColor: Colors.transparent,
@@ -647,9 +500,11 @@ class _ScreenTimeSection extends StatelessWidget {
                     size: 40, color: Colors.grey.shade300),
                 const SizedBox(height: 8),
                 const Text('Screen time data not yet available',
-                    style: TextStyle(fontSize: 13, color: AppColors.textSub)),
+                    style: TextStyle(
+                        fontSize: 13, color: AppColors.textSub)),
                 const Text('Will be enabled in Module 3',
-                    style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                    style: TextStyle(
+                        fontSize: 11, color: AppColors.textSub)),
               ]),
             ),
           ),
@@ -681,9 +536,11 @@ class _RecentAppsSection extends StatelessWidget {
                   size: 40, color: Colors.grey.shade300),
               const SizedBox(height: 8),
               const Text('App usage data not yet available',
-                  style: TextStyle(fontSize: 13, color: AppColors.textSub)),
+                  style: TextStyle(
+                      fontSize: 13, color: AppColors.textSub)),
               const Text('Will be enabled in Module 3',
-                  style: TextStyle(fontSize: 11, color: AppColors.textSub)),
+                  style: TextStyle(
+                      fontSize: 11, color: AppColors.textSub)),
             ]),
           ),
         ]),
@@ -692,48 +549,27 @@ class _RecentAppsSection extends StatelessWidget {
   }
 }
 
-// ── Recent Incidents Section — max 3 + View All button ────────────────────
+// ── Recent Incidents Section ───────────────────────────────────────────────
 class _IncidentsSection extends StatelessWidget {
   final String          deviceId;
   final IncidentService service;
-  final VoidCallback    onViewAll;
 
   const _IncidentsSection({
     required this.deviceId,
     required this.service,
-    required this.onViewAll,
   });
 
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.only(left: 4, bottom: 12),
-        child: Row(children: [
-          const Text('Recent Incidents',
-              style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15,
-                  color: AppColors.textPrimary)),
-          const Spacer(),
-          TextButton.icon(
-            onPressed: onViewAll,
-            icon: const Icon(Icons.arrow_forward, size: 16),
-            label: const Text('View All'),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: AppColors.primary,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
-              textStyle: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ]),
+      const Padding(
+        padding: EdgeInsets.only(left: 4, bottom: 12),
+        child: Text('Recent Incidents',
+            style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+                color: AppColors.textPrimary)),
       ),
-
       StreamBuilder<List<IncidentModel>>(
         stream: service.watchIncidents(deviceId),
         builder: (context, snap) {
@@ -774,12 +610,8 @@ class _IncidentsSection extends StatelessWidget {
 
           return Column(
             children: incidents
-                .take(3)
-                .map((i) => _IncidentTile(
-                      incident:        i,
-                      showDescription: false,
-                      service:         service,
-                    ))
+                .take(10)
+                .map((i) => _IncidentTile(incident: i))
                 .toList(),
           );
         },
@@ -788,544 +620,48 @@ class _IncidentsSection extends StatelessWidget {
   }
 }
 
-// ── Incident Tile — View Detail popup + Resolved button ───────────────────
+// ── Incident Tile ──────────────────────────────────────────────────────────
 class _IncidentTile extends StatelessWidget {
-  final IncidentModel   incident;
-  final bool            showDescription;
-  final IncidentService service;
+  final IncidentModel incident;
+  const _IncidentTile({required this.incident});
 
-  const _IncidentTile({
-    required this.incident,
-    required this.showDescription,
-    required this.service,
-  });
-
-  void _showDetailDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: Row(children: [
-          Icon(incident.category.icon,
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 1,
+      margin: const EdgeInsets.only(bottom: 8),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+            color: incident.category.color.withOpacity(0.12),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(incident.category.icon,
               color: incident.category.color, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(incident.category.displayLabel,
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: incident.category.color)),
-          ),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Detected text:',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSub)),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: incident.category.color.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: incident.category.color.withOpacity(0.25)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.format_quote,
-                      size: 14,
-                      color: incident.category.color.withOpacity(0.6)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      incident.description.isNotEmpty
-                          ? incident.description
-                          : '(no raw text captured)',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: incident.category.color,
-                          fontStyle: FontStyle.italic,
-                          height: 1.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            _DetailRow(
-                label: 'Source',
-                value: _friendlyApp(incident.source)),
-            _DetailRow(
-                label: 'Confidence',
-                value: '${incident.confidenceLabel} '
-                    '(${(incident.confidenceScore * 100).toInt()}%)'),
-            _DetailRow(
-                label: 'Detected',
-                value: DateFormat('dd MMM yyyy, HH:mm')
-                    .format(incident.detectedAt)),
-            _DetailRow(
-                label: 'Alert sent',
-                value: incident.isAlertSend ? 'Yes' : 'No'),
-          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _resolveIncident(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Text('Resolve Incident',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
+        title: Text(incident.textSummary,
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary)),
-        content: const Text(
-            'Mark this incident as reviewed and remove it from the list?',
-            style: TextStyle(color: AppColors.textSub)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2E7D32),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Resolve'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await service.markReviewed(incident.incidentId);
-      await service.deleteIncident(incident.incidentId);
-    }
-  }
-
-  String _friendlyApp(String packageName) {
-    if (packageName.contains('whatsapp'))  return 'WhatsApp';
-    if (packageName.contains('chrome'))    return 'Chrome';
-    if (packageName.contains('instagram')) return 'Instagram';
-    if (packageName.contains('tiktok'))    return 'TikTok';
-    if (packageName.contains('telegram'))  return 'Telegram';
-    if (packageName.contains('youtube'))   return 'YouTube';
-    if (packageName.contains('facebook'))  return 'Facebook';
-    if (packageName.contains('twitter') ||
-        packageName.contains('x.com'))     return 'X / Twitter';
-    final parts = packageName.split('.');
-    return parts.isNotEmpty
-        ? parts.last[0].toUpperCase() + parts.last.substring(1)
-        : packageName;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top row — icon + summary
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: incident.category.color.withOpacity(0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(incident.category.icon,
-                    color: incident.category.color, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Text(incident.textSummary,
-                      style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary)),
-                  const SizedBox(height: 4),
-
-                  // Raw text box — shown in Alerts tab only
-                  if (showDescription && incident.description.isNotEmpty)
-                    Container(
-                      margin: const EdgeInsets.only(top: 4, bottom: 6),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: incident.category.color.withOpacity(0.06),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color:
-                                incident.category.color.withOpacity(0.2)),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.format_quote,
-                              size: 14,
-                              color: incident.category.color
-                                  .withOpacity(0.6)),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              incident.description,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: incident.category.color,
-                                  fontStyle: FontStyle.italic),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  Row(children: [
-                    Text(
-                      '${incident.confidenceLabel} · '
-                      '${DateFormat('dd MMM, HH:mm').format(incident.detectedAt)}',
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textSub),
-                    ),
-                    if (incident.isAlertSend) ...[
-                      const SizedBox(width: 6),
-                      const Icon(Icons.notifications_active,
-                          color: Color(0xFFC62828), size: 13),
-                      const SizedBox(width: 2),
-                      const Text('Alert sent',
-                          style: TextStyle(
-                              fontSize: 10,
-                              color: Color(0xFFC62828),
-                              fontWeight: FontWeight.w600)),
-                    ],
-                  ]),
-                ]),
-              ),
-            ]),
-
-            const SizedBox(height: 10),
-            const Divider(height: 1),
-            const SizedBox(height: 8),
-
-            // Action buttons
-            Row(children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => _showDetailDialog(context),
-                  icon: Icon(Icons.info_outline,
-                      size: 14, color: incident.category.color),
-                  label: Text('View Detail',
-                      style: TextStyle(
-                          fontSize: 12, color: incident.category.color)),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(
-                        color: incident.category.color.withOpacity(0.4)),
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _resolveIncident(context),
-                  icon: const Icon(Icons.check_circle_outline, size: 14),
-                  label: const Text('Resolved',
-                      style: TextStyle(fontSize: 12)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2E7D32),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 6),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-            ]),
-          ],
+        subtitle: Text(
+          '${incident.confidenceLabel} · '
+          '${DateFormat('dd MMM, HH:mm').format(incident.detectedAt)}',
+          style: const TextStyle(fontSize: 11, color: AppColors.textSub),
         ),
-      ),
-    );
-  }
-}
-
-// ── Bypass Section — max 3 ─────────────────────────────────────────────────
-class _BypassSection extends StatelessWidget {
-  final String             deviceId;
-  final BypassEventService service;
-
-  const _BypassSection({
-    required this.deviceId,
-    required this.service,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Padding(
-        padding: EdgeInsets.only(left: 4, bottom: 12),
-        child: Text('Bypass Attempts',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-                color: AppColors.textPrimary)),
-      ),
-
-      StreamBuilder<List<BypassEventModel>>(
-        stream: service.watchBypassEvents(deviceId),
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(
-                child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: CircularProgressIndicator()));
-          }
-
-          final events = snap.data ?? [];
-
-          if (events.isEmpty) {
-            return Card(
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              child: const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.verified_user_outlined,
-                        size: 44, color: Color(0xFF2E7D32)),
-                    SizedBox(height: 10),
-                    Text('No bypass attempts',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary)),
-                    SizedBox(height: 4),
-                    Text('No suspicious activity detected.',
-                        style: TextStyle(
-                            fontSize: 12, color: AppColors.textSub)),
-                  ]),
-                ),
-              ),
-            );
-          }
-
-          return Column(
-            children: events
-                .take(3)
-                .map((b) => _BypassTile(event: b, service: service))
-                .toList(),
-          );
-        },
-      ),
-    ]);
-  }
-}
-
-// ── Bypass Tile — Resolved button ─────────────────────────────────────────
-class _BypassTile extends StatelessWidget {
-  final BypassEventModel   event;
-  final BypassEventService service;
-
-  const _BypassTile({required this.event, required this.service});
-
-  Future<void> _resolve(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Text('Resolve Bypass Attempt',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary)),
-        content: const Text(
-            'Mark this bypass attempt as reviewed and remove it?',
-            style: TextStyle(color: AppColors.textSub)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2E7D32),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Resolve'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await service.markReviewed(event.bypassId);
-      await service.deleteBypassEvent(event.bypassId);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: event.eventType.color.withOpacity(0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(event.eventType.icon,
-                    color: event.eventType.color, size: 20),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                  Text(event.eventType.displayLabel,
-                      style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary)),
-                  const SizedBox(height: 2),
-                  Text(event.eventDescription,
-                      style: const TextStyle(
-                          fontSize: 12, color: AppColors.textSub),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 4),
-                  Row(children: [
-                    Text(
-                      DateFormat('dd MMM, HH:mm').format(event.detectedAt),
-                      style: const TextStyle(
-                          fontSize: 11, color: AppColors.textSub),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: event.isBlocked
-                            ? const Color(0xFF2E7D32).withOpacity(0.12)
-                            : const Color(0xFFC62828).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        event.isBlocked ? 'Blocked' : 'Not Blocked',
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w600,
-                            color: event.isBlocked
-                                ? const Color(0xFF2E7D32)
-                                : const Color(0xFFC62828)),
-                      ),
-                    ),
-                  ]),
-                ]),
-              ),
-            ]),
-
-            const SizedBox(height: 10),
-            const Divider(height: 1),
-            const SizedBox(height: 8),
-
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => _resolve(context),
-                icon: const Icon(Icons.check_circle_outline, size: 14),
-                label: const Text('Resolved',
-                    style: TextStyle(fontSize: 12)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2E7D32),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8)),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Detail Row helper ──────────────────────────────────────────────────────
-class _DetailRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _DetailRow({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text('$label:',
-                style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSub)),
-          ),
-          Expanded(
-            child: Text(value,
-                style: const TextStyle(
-                    fontSize: 12, color: AppColors.textPrimary)),
-          ),
-        ],
+        trailing: incident.isAlertSend
+            ? const Icon(Icons.notifications_active,
+                color: Color(0xFFC62828), size: 18)
+            : null,
       ),
     );
   }
 }
 
 // ── Shared Widgets ─────────────────────────────────────────────────────────
+
 class _SectionTitle extends StatelessWidget {
   final IconData icon;
   final String   title;
@@ -1429,385 +765,5 @@ class _InfoRow extends StatelessWidget {
             overflow: TextOverflow.ellipsis),
       ),
     ]);
-  }
-}
-
-// ── Alerts tab — Incident tile with three-dot popup menu ──────────────────
-class _AlertsIncidentTile extends StatelessWidget {
-  final IncidentModel   incident;
-  final IncidentService service;
-
-  const _AlertsIncidentTile({
-    required this.incident,
-    required this.service,
-  });
-
-  void _showDetailDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: Row(children: [
-          Icon(incident.category.icon,
-              color: incident.category.color, size: 20),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(incident.category.displayLabel,
-                style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: incident.category.color)),
-          ),
-        ]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Detected text:',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSub)),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: incident.category.color.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: incident.category.color.withOpacity(0.25)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.format_quote,
-                      size: 14,
-                      color: incident.category.color.withOpacity(0.6)),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      incident.description.isNotEmpty
-                          ? incident.description
-                          : '(no raw text captured)',
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: incident.category.color,
-                          fontStyle: FontStyle.italic,
-                          height: 1.5),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            _DetailRow(label: 'Source',
-                value: _friendlyApp(incident.source)),
-            _DetailRow(
-                label: 'Confidence',
-                value: '${incident.confidenceLabel} '
-                    '(${(incident.confidenceScore * 100).toInt()}%)'),
-            _DetailRow(
-                label: 'Detected',
-                value: DateFormat('dd MMM yyyy, HH:mm')
-                    .format(incident.detectedAt)),
-            _DetailRow(
-                label: 'Alert sent',
-                value: incident.isAlertSend ? 'Yes' : 'No'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _resolve(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Text('Resolve Incident',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary)),
-        content: const Text(
-            'Mark this incident as reviewed and remove it from the list?',
-            style: TextStyle(color: AppColors.textSub)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2E7D32),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Resolve'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await service.markReviewed(incident.incidentId);
-      await service.deleteIncident(incident.incidentId);
-    }
-  }
-
-  String _friendlyApp(String packageName) {
-    if (packageName.contains('whatsapp'))  return 'WhatsApp';
-    if (packageName.contains('chrome'))    return 'Chrome';
-    if (packageName.contains('instagram')) return 'Instagram';
-    if (packageName.contains('tiktok'))    return 'TikTok';
-    if (packageName.contains('telegram'))  return 'Telegram';
-    if (packageName.contains('youtube'))   return 'YouTube';
-    if (packageName.contains('facebook'))  return 'Facebook';
-    if (packageName.contains('twitter') ||
-        packageName.contains('x.com'))     return 'X / Twitter';
-    final parts = packageName.split('.');
-    return parts.isNotEmpty
-        ? parts.last[0].toUpperCase() + parts.last.substring(1)
-        : packageName;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        // Category icon
-        Container(
-          width: 38, height: 38,
-          decoration: BoxDecoration(
-            color: incident.category.color.withOpacity(0.12),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(incident.category.icon,
-              color: incident.category.color, size: 18),
-        ),
-        const SizedBox(width: 12),
-
-        // Content
-        Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-            Text(incident.textSummary,
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary)),
-            const SizedBox(height: 3),
-            Row(children: [
-              Text(
-                DateFormat('dd MMM, HH:mm').format(incident.detectedAt),
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textSub),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: incident.category.color.withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(incident.confidenceLabel,
-                    style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                        color: incident.category.color)),
-              ),
-              if (incident.isAlertSend) ...[
-                const SizedBox(width: 6),
-                const Icon(Icons.notifications_active,
-                    color: Color(0xFFC62828), size: 12),
-              ],
-            ]),
-          ]),
-        ),
-
-        // ── Three-dot popup menu ─────────────────────────────────────────
-        PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert,
-              color: AppColors.textSub, size: 20),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          onSelected: (value) {
-            if (value == 'detail') _showDetailDialog(context);
-            if (value == 'resolve') _resolve(context);
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'detail',
-              child: Row(children: [
-                Icon(Icons.info_outline,
-                    size: 16, color: incident.category.color),
-                const SizedBox(width: 10),
-                const Text('View Detail',
-                    style: TextStyle(fontSize: 13)),
-              ]),
-            ),
-            const PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'resolve',
-              child: Row(children: [
-                const Icon(Icons.check_circle_outline,
-                    size: 16, color: Color(0xFF2E7D32)),
-                const SizedBox(width: 10),
-                const Text('Resolve',
-                    style: TextStyle(
-                        fontSize: 13, color: Color(0xFF2E7D32))),
-              ]),
-            ),
-          ],
-        ),
-      ]),
-    );
-  }
-}
-
-// ── Alerts tab — Bypass tile with three-dot popup menu ────────────────────
-class _AlertsBypassTile extends StatelessWidget {
-  final BypassEventModel   event;
-  final BypassEventService service;
-
-  const _AlertsBypassTile({
-    required this.event,
-    required this.service,
-  });
-
-  Future<void> _resolve(BuildContext context) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        title: const Text('Resolve Bypass Attempt',
-            style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary)),
-        content: const Text(
-            'Mark this bypass attempt as reviewed and remove it?',
-            style: TextStyle(color: AppColors.textSub)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2E7D32),
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Resolve'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      await service.markReviewed(event.bypassId);
-      await service.deleteBypassEvent(event.bypassId);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        // Event icon
-        Container(
-          width: 38, height: 38,
-          decoration: BoxDecoration(
-            color: event.eventType.color.withOpacity(0.12),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(event.eventType.icon,
-              color: event.eventType.color, size: 18),
-        ),
-        const SizedBox(width: 12),
-
-        // Content
-        Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-            Text(event.eventType.displayLabel,
-                style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary)),
-            const SizedBox(height: 3),
-            Row(children: [
-              Text(
-                DateFormat('dd MMM, HH:mm').format(event.detectedAt),
-                style: const TextStyle(
-                    fontSize: 11, color: AppColors.textSub),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: event.isBlocked
-                      ? const Color(0xFF2E7D32).withOpacity(0.10)
-                      : const Color(0xFFC62828).withOpacity(0.10),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  event.isBlocked ? 'Blocked' : 'Not Blocked',
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: event.isBlocked
-                          ? const Color(0xFF2E7D32)
-                          : const Color(0xFFC62828)),
-                ),
-              ),
-            ]),
-          ]),
-        ),
-
-        // ── Three-dot popup menu — Resolve only for bypass ───────────────
-        PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert,
-              color: AppColors.textSub, size: 20),
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12)),
-          onSelected: (value) {
-            if (value == 'resolve') _resolve(context);
-          },
-          itemBuilder: (_) => [
-            PopupMenuItem(
-              value: 'resolve',
-              child: Row(children: [
-                const Icon(Icons.check_circle_outline,
-                    size: 16, color: Color(0xFF2E7D32)),
-                const SizedBox(width: 10),
-                const Text('Resolve',
-                    style: TextStyle(
-                        fontSize: 13, color: Color(0xFF2E7D32))),
-              ]),
-            ),
-          ],
-        ),
-      ]),
-    );
   }
 }

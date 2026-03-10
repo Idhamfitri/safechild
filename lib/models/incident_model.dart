@@ -4,6 +4,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 enum IncidentCategory {
   toxic,        // Module 2 — general harmful/toxic content
   threatening,  // Module 2 — threatening content (bullying, threats)
+  violence,
+  adult,
+  gambling,
+  drugs,
+  bullying,
+  unknown,
 }
 
 extension IncidentCategoryX on IncidentCategory {
@@ -11,6 +17,12 @@ extension IncidentCategoryX on IncidentCategory {
     switch (this) {
       case IncidentCategory.toxic:       return 'toxic';
       case IncidentCategory.threatening: return 'threatening';
+      case IncidentCategory.violence:    return 'violence';
+      case IncidentCategory.adult:       return 'adult';
+      case IncidentCategory.gambling:    return 'gambling';
+      case IncidentCategory.drugs:       return 'drugs';
+      case IncidentCategory.bullying:    return 'bullying';
+      case IncidentCategory.unknown:     return 'unknown';
     }
   }
 
@@ -18,6 +30,12 @@ extension IncidentCategoryX on IncidentCategory {
     switch (this) {
       case IncidentCategory.toxic:       return 'Toxic Content';
       case IncidentCategory.threatening: return 'Threatening';
+      case IncidentCategory.violence:    return 'Violence';
+      case IncidentCategory.adult:       return 'Adult Content';
+      case IncidentCategory.gambling:    return 'Gambling';
+      case IncidentCategory.drugs:       return 'Drugs';
+      case IncidentCategory.bullying:    return 'Bullying';
+      case IncidentCategory.unknown:     return 'Unknown';
     }
   }
 
@@ -25,6 +43,12 @@ extension IncidentCategoryX on IncidentCategory {
     switch (this) {
       case IncidentCategory.toxic:       return const Color(0xFFE65100);
       case IncidentCategory.threatening: return const Color(0xFFD32F2F);
+      case IncidentCategory.violence:    return const Color(0xFFD32F2F);
+      case IncidentCategory.adult:       return const Color(0xFFE91E63);
+      case IncidentCategory.gambling:    return const Color(0xFF6A1B9A);
+      case IncidentCategory.drugs:       return const Color(0xFF1565C0);
+      case IncidentCategory.bullying:    return const Color(0xFFE65100);
+      case IncidentCategory.unknown:     return const Color(0xFF757575);
     }
   }
 
@@ -32,6 +56,12 @@ extension IncidentCategoryX on IncidentCategory {
     switch (this) {
       case IncidentCategory.toxic:       return Icons.warning_amber_outlined;
       case IncidentCategory.threatening: return Icons.gpp_bad_outlined;
+      case IncidentCategory.violence:    return Icons.dangerous_outlined;
+      case IncidentCategory.adult:       return Icons.no_adult_content_outlined;
+      case IncidentCategory.gambling:    return Icons.casino_outlined;
+      case IncidentCategory.drugs:       return Icons.medication_outlined;
+      case IncidentCategory.bullying:    return Icons.person_off_outlined;
+      case IncidentCategory.unknown:     return Icons.help_outline;
     }
   }
 }
@@ -40,7 +70,12 @@ IncidentCategory _catFromString(String? s) {
   switch (s) {
     case 'toxic':       return IncidentCategory.toxic;
     case 'threatening': return IncidentCategory.threatening;
-    default:            return IncidentCategory.toxic;
+    case 'violence':    return IncidentCategory.violence;
+    case 'adult':       return IncidentCategory.adult;
+    case 'gambling':    return IncidentCategory.gambling;
+    case 'drugs':       return IncidentCategory.drugs;
+    case 'bullying':    return IncidentCategory.bullying;
+    default:            return IncidentCategory.unknown;
   }
 }
 
@@ -48,7 +83,7 @@ class IncidentModel {
   final String           incidentId;
   final String           deviceId;
   final String           textSummary;
-  final String           description;   
+  final String           description;   // ← raw captured text e.g. "kau ni memang bodo sial"
   final String           source;
   final double           confidenceScore;
   final IncidentCategory category;

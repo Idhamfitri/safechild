@@ -9,6 +9,8 @@ import '../../utils/validators.dart';
 import '../../utils/app_theme.dart';
 import 'register_screen.dart';
 import '../parent/dashboard_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../admin/admin_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});

@@ -1,46 +1,38 @@
 <manifest 
 xmlns:android="http://schemas.android.com/apk/res/android"
 xmlns:tools="http://schemas.android.com/tools">
- <!-- ══════════════════════════════════════════════════════════
-         PERMISSIONS — Child Device
-         (Module reference from permission table in SRD report)
-         ══════════════════════════════════════════════════════════ -->
-
-
 
     
-    <!-- Modules 2, 3 & 4 — Firebase, Firestore, FCM -->
+    <!-- Firebase, Firestore, FCM -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Module 4 — FCM, heartbeat network check -->
+    <!--  FCM, heartbeat network check -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Module 4 — Local notification display -->
+    <!--  Local notification display -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Modules 2, 3 & 4 — Keep monitoring service alive -->
+    <!--  Keep monitoring service alive -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- foregroundServiceType: remoteMessaging -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING" />
 
-    <!-- Modules 2, 3 & 4 — Restart service after device reboot -->
+    <!-- Restart service after device reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Module 3 — App usage stats (screen time tracking) -->
+    <!--  App usage stats ) -->
     <uses-permission 
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
-    <!-- Module 3 — Show overlay / intervention screen over other apps -->
+    <!-- Show overlay  -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
 
-
-    <!-- Module 2 & 3 — Accessibility service (content reading for AI detection) -->
-    <!-- Declared in <application> block below, not here as a uses-permission -->
-
-    <!-- Module 3 — Device Administrator (prevent uninstall) -->
+    <!-- Device Administrator  -->
     <uses-permission android:name="android.permission.BIND_DEVICE_ADMIN" />
 
-    <!-- Parent device only — vibrate on alert -->
+    <!-- Parent device only -->
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Image picker — camera access for child photo upload -->
@@ -63,10 +55,7 @@ xmlns:tools="http://schemas.android.com/tools">
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-            <!-- Specifies an Android theme to apply to this Activity as soon as
-                 the Android process has started. This theme is visible to the user
-                 while the Flutter UI initializes. After that, this theme continues
-                 to determine the Window background behind the Flutter UI. -->
+
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
@@ -77,7 +66,7 @@ xmlns:tools="http://schemas.android.com/tools">
             </intent-filter>
         </activity>
 
-        <!-- FCM — required for Firebase Cloud Messaging -->
+        <!-- FCM -->
         <service
             android:name="com.google.firebase.messaging.FirebaseMessagingService"
             android:exported="false">
@@ -85,6 +74,11 @@ xmlns:tools="http://schemas.android.com/tools">
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <service
+            android:name="id.flutter.flutter_background_service.BackgroundService"
+            android:foregroundServiceType="dataSync"
+        />
 
         
         
@@ -104,36 +98,6 @@ xmlns:tools="http://schemas.android.com/tools">
     </service>
 
 
-
-
-        <!-- ── Module 3: Device Admin Receiver (placeholder for Module 3) ──
-             Uncomment and implement SafeChildDeviceAdminReceiver in Kotlin
-             when building Module 3. -->
-        <!--
-        <receiver
-            android:name=".SafeChildDeviceAdminReceiver"
-            android:exported="true"
-            android:permission="android.permission.BIND_DEVICE_ADMIN">
-            <meta-data
-                android:name="android.app.device_admin"
-                android:resource="@xml/device_admin_config" />
-            <intent-filter>
-                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
-            </intent-filter>
-        </receiver>
-        -->
-
-        <!-- ── Boot receiver — restart services after device reboot ──
-             Uncomment when background services are implemented in Module 4. -->
-        <!--
-        <receiver
-            android:name=".BootReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-        -->
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

@@ -1,4 +1,20 @@
 // lib/models/monitoring_setting_model.dart
+// ─────────────────────────────────────────────────────────────────────────────
+// Maps to Firestore collection: monitoring_settings/{monitor_id}
+// One document per parent–child link.
+//
+// Schema (MODULE3_WORKFLOW Part 4 — exact match):
+//   link_id              – references parent_child_links
+//   offline_mode         – pause all monitoring temporarily
+//   notification_enabled – push notifications to parent enabled
+//   updated_at           – server timestamp of last change
+//
+// Note: Additional settings (SMS, Gemini filter, reward system) will be
+// added to the Firestore schema in a later module. They are shown in the
+// UI with a "Module 2/3" label and persisted locally until the schema
+// is extended.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MonitoringSettingModel {
@@ -8,7 +24,7 @@ class MonitoringSettingModel {
   final bool    notificationEnabled;   // push notifications on/off
   final DateTime? updatedAt;
 
-  // ── Extended settings
+  // ── Extended settings (stored in Firestore as extra fields for future) ────
   final bool    contentMonitoringEnabled;
   final bool    geminiContentFilterEnabled;
   final bool    smsNotificationEnabled;

@@ -1,3 +1,19 @@
+// lib/screens/auth/register_screen.dart
+//
+// FLOW:
+//  Step 1 — User selects role: "Parent" or "Child Device"
+//
+//  If PARENT selected:
+//    Step 2 — Fill: Full Name, Email, Password, Confirm Password
+//    Step 3 — Submit → Firebase Auth + Firestore PARENT doc created
+//    Step 4 → Navigate to ParentDashboardScreen
+//             (parent then uses "Add Child Device" from dashboard to generate pairing code)
+//
+//  If CHILD selected:
+//    Step 2 — Enter 6-digit pairing code (given by parent)
+//    Step 3 → ChildPairingService matches code → updates CHILD_DEVICE + PARENT_CHILD_LINK
+//    Step 4 → Navigate to ChildActiveScreen (monitoring mode)
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pinput/pinput.dart';
