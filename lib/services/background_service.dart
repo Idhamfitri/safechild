@@ -63,10 +63,6 @@ class BackgroundServiceManager {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Background isolate entry point — runs in a SEPARATE Dart isolate.
-// No access to widget tree. Must reinitialise Firebase.
-// ─────────────────────────────────────────────────────────────────────────────
 @pragma('vm:entry-point')
 Future<void> onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
@@ -90,7 +86,6 @@ Future<void> onStart(ServiceInstance service) async {
   });
 }
 
-// ── Heartbeat ─────────────────────────────────────────────────────────────────
 Future<void> _sendHeartbeat(ServiceInstance service) async {
   try {
     final prefs    = await SharedPreferences.getInstance();
@@ -102,50 +97,37 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
     final db  = FirebaseFirestore.instance;
     final now = DateTime.now();
 
-    // Real permission states via MethodChannel
-    final usageGranted      = await NativeChannelService.checkUsageAccessGranted();
-    final accessibilityOn   = await NativeChannelService.checkAccessibilityEnabled();
-    final deviceAdminActive = await NativeChannelService.checkDeviceAdminActive();
-
-    // Battery level
+    // Battery level — works fine in background isolate
     int? batteryLevel;
     try { batteryLevel = await Battery().batteryLevel; } catch (_) {}
 
-    // ── Upsert heartbeat — one doc per device, never duplicates ──────────
+    // ── Heartbeat only — no permission checks (MethodChannel = main isolate only)
     await db.collection('heartbeat').doc(deviceId).set({
-      'device_id':            deviceId,
-      'last_sync':            Timestamp.fromDate(now),
-      'signal_status':        'active',
-      'safechild_running':    true,
-      'device_admin_active':  deviceAdminActive,
-      'accessibility_active': accessibilityOn,
-      'usage_access_granted': usageGranted,
+      'device_id':         deviceId,
+      'last_sync':         Timestamp.fromDate(now),
+      'signal_status':     'active',
+      'safechild_running': true,
       if (batteryLevel != null) 'battery_level': batteryLevel,
     }, SetOptions(merge: true));
 
-    // ── Update child_devices last_seen ────────────────────────────────────
+    // ── Update last_seen only ─────────────────────────────────────────────
     await db.collection('child_devices').doc(deviceId).update({
       'last_seen': Timestamp.fromDate(now),
     });
 
-    // ── Write usage stats if permission granted ───────────────────────────
-    if (usageGranted) {
-      await _writeUsageStats(db, deviceId, now);
-    }
-
-    // ── Update notification with last sync time ───────────────────────────
+    // ── Usage stats — NativeChannelService won't work here either
+    // Move this to main isolate in Module 3
+    
+    // ── Update notification ───────────────────────────────────────────────
     if (service is AndroidServiceInstance) {
       service.setForegroundNotificationInfo(
         title:   'SafeChild Active',
         content: 'Last sync: ${_formatTime(now)}',
       );
     }
-  } catch (_) {
-    // Silently continue — never crash the service
-  }
+  } catch (_) {}
 }
 
-// ── Usage stats ───────────────────────────────────────────────────────────────
 Future<void> _writeUsageStats(
     FirebaseFirestore db, String deviceId, DateTime now) async {
   try {

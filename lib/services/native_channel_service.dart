@@ -1,10 +1,5 @@
 // lib/services/native_channel_service.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// Dart wrapper around the NativeHelperPlugin MethodChannel.
-// Provides typed methods for permission checking and usage stats.
-//
-// Channel: "com.safechild/native_helper"
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 import 'package:flutter/services.dart';
 
@@ -14,7 +9,7 @@ class NativeChannelService {
   // ── Permission checks ─────────────────────────────────────────────────────
   // All return false on any error (safe default — don't mark as granted).
 
-  /// Checks PACKAGE_USAGE_STATS via AppOpsManager.
+
   static Future<bool> checkUsageAccessGranted() async {
     try {
       return await _channel.invokeMethod<bool>('checkUsageAccessGranted') ?? false;
@@ -23,8 +18,6 @@ class NativeChannelService {
     }
   }
 
-  /// Checks if SafeChildAccessibilityService is in ENABLED_ACCESSIBILITY_SERVICES.
-  /// Returns false until Module 3 creates the accessibility service class.
   static Future<bool> checkAccessibilityEnabled() async {
     try {
       return await _channel.invokeMethod<bool>('checkAccessibilityEnabled') ?? false;
@@ -33,8 +26,6 @@ class NativeChannelService {
     }
   }
 
-  /// Checks if SafeChildDeviceAdminReceiver is an active device admin.
-  /// Returns false until Module 3 creates the device admin receiver class.
   static Future<bool> checkDeviceAdminActive() async {
     try {
       return await _channel.invokeMethod<bool>('checkDeviceAdminActive') ?? false;
@@ -44,8 +35,6 @@ class NativeChannelService {
   }
 
   // ── Usage stats ───────────────────────────────────────────────────────────
-  /// Returns top 10 apps used today sorted by usage time (descending).
-  /// Returns empty list if PACKAGE_USAGE_STATS not granted.
   static Future<List<AppUsageStat>> getTodayUsageStats() async {
     try {
       final now   = DateTime.now();

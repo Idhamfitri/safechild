@@ -40,7 +40,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
 
     if (updated.isExpired && !_navigating) _showExpiredDialog();
 
-    // Navigate only when child has fully completed setup
+  
     if (updated.isSetupActive && !_navigating) {
       _navigating = true;
       HapticFeedback.mediumImpact();

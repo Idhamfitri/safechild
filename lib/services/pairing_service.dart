@@ -149,13 +149,14 @@ class PairingService {
     required String deviceId,
     required int    stepIndex,      // 0=notifications, 1=overlay, 2=usage, 3=accessibility, 4=deviceAdmin
     required String permissionKey,  // 'notifications' | 'overlay' | 'usage_access' | 'accessibility' | 'device_admin'
+    bool granted = true,
   }) async {
     await Future.wait([
       // Advance the step shown to parent
       _links.doc(linkId).update({'setup_step': stepIndex + 1}),
       // Mark permission as granted in device doc
       _devices.doc(deviceId).update({
-        'permission_status.$permissionKey': true,
+        'permission_status.$permissionKey': granted,
         'permission_status.last_updated':   Timestamp.now(),
       }),
     ]);
@@ -171,7 +172,7 @@ class PairingService {
     await Future.wait([
       _links.doc(linkId).update({
         'setup_phase': 'active',
-        'setup_step':  4,           // all 4 steps done (device admin in Module 4)
+        'setup_step':  4,          
       }),
       _devices.doc(deviceId).update({
         'permission_status': finalStatus.toMap(),

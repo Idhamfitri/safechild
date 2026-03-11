@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum IncidentCategory {
-  toxic,        // Module 2 — general harmful/toxic content
-  threatening,  // Module 2 — threatening content (bullying, threats)
+  toxic,        
+  threatening,  
   violence,
   adult,
   gambling,
@@ -83,7 +83,7 @@ class IncidentModel {
   final String           incidentId;
   final String           deviceId;
   final String           textSummary;
-  final String           description;   // ← raw captured text e.g. "kau ni memang bodo sial"
+  final String           description;   
   final String           source;
   final double           confidenceScore;
   final IncidentCategory category;
@@ -117,7 +117,7 @@ class IncidentModel {
       incidentId:      doc.id,
       deviceId:        d['device_id']        ?? '',
       textSummary:     d['text_summary']      ?? '',
-      description:     d['description']       ?? '',   // ← new field
+      description:     d['description']       ?? '',  
       source:          d['source']            ?? '',
       confidenceScore: (d['confidence_score'] ?? 0.0).toDouble(),
       category:        _catFromString(d['category']),
@@ -137,7 +137,7 @@ class IncidentModel {
   Map<String, dynamic> toFirestore() => {
         'device_id':        deviceId,
         'text_summary':     textSummary,
-        'description':      description,   // ← new field
+        'description':      description,   
         'source':           source,
         'confidence_score': confidenceScore,
         'category':         category.value,

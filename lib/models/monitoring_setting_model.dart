@@ -1,30 +1,15 @@
 // lib/models/monitoring_setting_model.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// Maps to Firestore collection: monitoring_settings/{monitor_id}
-// One document per parent–child link.
-//
-// Schema (MODULE3_WORKFLOW Part 4 — exact match):
-//   link_id              – references parent_child_links
-//   offline_mode         – pause all monitoring temporarily
-//   notification_enabled – push notifications to parent enabled
-//   updated_at           – server timestamp of last change
-//
-// Note: Additional settings (SMS, Gemini filter, reward system) will be
-// added to the Firestore schema in a later module. They are shown in the
-// UI with a "Module 2/3" label and persisted locally until the schema
-// is extended.
-// ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MonitoringSettingModel {
-  // ── Firestore-backed (matches schema exactly) ─────────────────────────────
+ 
   final String  linkId;
-  final bool    offlineMode;           // pause monitoring
-  final bool    notificationEnabled;   // push notifications on/off
+  final bool    offlineMode;           
+  final bool    notificationEnabled;   
   final DateTime? updatedAt;
 
-  // ── Extended settings (stored in Firestore as extra fields for future) ────
+  // ── Extended settings 
   final bool    contentMonitoringEnabled;
   final bool    geminiContentFilterEnabled;
   final bool    smsNotificationEnabled;
@@ -54,7 +39,7 @@ class MonitoringSettingModel {
       updatedAt: d['updated_at'] != null
           ? (d['updated_at'] as Timestamp).toDate()
           : null,
-      // Extended fields (may or may not exist in Firestore yet)
+     
       contentMonitoringEnabled:   d['content_monitoring_enabled']    ?? true,
       geminiContentFilterEnabled: d['gemini_content_filter_enabled'] ?? true,
       smsNotificationEnabled:     d['sms_notification_enabled']      ?? false,
@@ -63,12 +48,12 @@ class MonitoringSettingModel {
   }
 
   Map<String, dynamic> toFirestore() => {
-        // Core schema fields
+      
         'link_id':              linkId,
         'offline_mode':         offlineMode,
         'notification_enabled': notificationEnabled,
         'updated_at':           FieldValue.serverTimestamp(),
-        // Extended fields
+       
         'content_monitoring_enabled':    contentMonitoringEnabled,
         'gemini_content_filter_enabled': geminiContentFilterEnabled,
         'sms_notification_enabled':      smsNotificationEnabled,

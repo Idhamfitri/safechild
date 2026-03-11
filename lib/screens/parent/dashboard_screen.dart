@@ -339,10 +339,6 @@ class _ChildCard extends StatelessWidget {
                                     fontSize: 12,
                                     color: AppColors.textSub),
                                 overflow: TextOverflow.ellipsis),
-                            const SizedBox(height: 6),
-                            _StatusBadge(
-                                isPaired: isPaired,
-                                status: link.pairingStatus),
                           ],
                         ),
                       ),
@@ -502,52 +498,3 @@ class _ChildAvatar extends StatelessWidget {
       );
 }
 
-// ─── Status badge ─────────────────────────────────────────────────────────────
-class _StatusBadge extends StatelessWidget {
-  final bool          isPaired;
-  final PairingStatus status;
-  const _StatusBadge(
-      {required this.isPaired, required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    late Color    color;
-    late String   label;
-    late IconData icon;
-
-    if (status == PairingStatus.linked && isPaired) {
-      color = AppColors.statusLinked;
-      label = 'Active';
-      icon  = Icons.check_circle_outline;
-    } else if (status == PairingStatus.pending) {
-      color = AppColors.statusPending;
-      label = 'Pending Link';
-      icon  = Icons.hourglass_empty;
-    } else {
-      color = AppColors.statusExpired;
-      label = 'Inactive';
-      icon  = Icons.cancel_outlined;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(
-          horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 11, color: color),
-        const SizedBox(width: 4),
-        Text(label,
-            style: TextStyle(
-                fontSize: 11,
-                color: color,
-                fontWeight: FontWeight.w600)),
-      ]),
-    );
-  }
-  
-  
-}
