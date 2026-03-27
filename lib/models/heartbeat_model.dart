@@ -1,8 +1,4 @@
 // lib/models/heartbeat_model.dart
-// One document per device — document ID = device_id
-// Updated every 10 minutes by child_active_screen via .set(merge: true)
-// Never creates new documents — prevents unbounded growth
-
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -12,7 +8,7 @@ class HeartbeatModel {
   final String    signalStatus;    // 'active' | 'lost'
   final bool      safechidRunning;
   final bool      accessibilityActive;
-  // Device admin intentionally excluded — not needed until Module 4
+
   final int?      batteryLevel;
 
   HeartbeatModel({

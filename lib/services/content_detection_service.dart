@@ -114,7 +114,6 @@ void _onAccessibilityEvent(AccessibilityEvent event) {
   _processText(rawText, sourceApp);
 }
 
-// Extract readable text — strips Android span formatting from Instagram etc.
 String _cleanText(String raw) {
   // Extract mText values from Android span format
   // e.g. {mText: hello world} → "hello world"

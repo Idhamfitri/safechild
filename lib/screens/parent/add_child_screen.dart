@@ -1,8 +1,4 @@
 // lib/screens/parent/add_child_screen.dart
-// UPDATED: Added child profile photo picker (camera or gallery).
-// Photo is uploaded to Firebase Storage on form submit.
-// URL is stored in CHILD_DEVICE.image field.
-
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -127,11 +123,8 @@ class _AddChildScreenState extends State<AddChildScreen> {
 
     try {
       final parentId = FirebaseAuth.instance.currentUser!.uid;
-      // Use a temp deviceId for the storage path — PairingService will create
-      // the actual Firestore document with this same ID.
       final tempDeviceId = _uuid.v4();
 
-      // 1. Upload photo first (if selected)
       String? imageUrl;
       if (_selectedImage != null) {
         imageUrl = await _storageService.uploadChildProfileImage(
@@ -143,7 +136,6 @@ class _AddChildScreenState extends State<AddChildScreen> {
             _uploadError = 'Photo upload failed. You can add it later.';
             _loading = false;
           });
-          // Continue without photo — don't block pairing
         }
       }
 
@@ -154,7 +146,7 @@ class _AddChildScreenState extends State<AddChildScreen> {
         childAge: int.parse(_childAgeCtrl.text.trim()),
         deviceName: _deviceNameCtrl.text.trim(),
         childImageUrl: imageUrl,
-        deviceId: tempDeviceId,   // pass the same ID used for storage
+        deviceId: tempDeviceId,   
       );
 
       if (!mounted) return;

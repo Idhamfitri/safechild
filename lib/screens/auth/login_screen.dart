@@ -1,6 +1,4 @@
 // lib/screens/auth/login_screen.dart
-// Login is for PARENTS only. The child role does not log in.
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -75,7 +73,6 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: color,
         behavior: SnackBarBehavior.floating));
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -168,7 +165,6 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
 
                 const SizedBox(height: 28),
-
                 // ── Register link ─────────────────────────────────────────────
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   const Text('New to SafeChild?',
@@ -190,7 +186,6 @@ class _LoginScreenState extends State<LoginScreen> {
       ),
     );
   }
-
   @override
   void dispose() {
     _emailCtrl.dispose();

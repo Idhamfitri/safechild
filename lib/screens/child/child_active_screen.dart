@@ -347,8 +347,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
   void dispose() {
     _detectionService.stop();
     _linkSub?.cancel();
-    // Do NOT stop background service on dispose —
-    // it must keep running after screen is destroyed
+
     super.dispose();
   }
 

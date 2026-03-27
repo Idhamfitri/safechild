@@ -1,11 +1,4 @@
 // lib/models/parent_child_link_model.dart
-// UPDATED: Added SetupPhase enum + setup_phase + setup_step fields.
-// setup_phase tracks how far the child device has progressed in setup:
-//   pending  → parent generated code, waiting for child to enter it
-//   paired   → child entered code, now in permission setup wizard
-//   active   → child finished all permissions, on ChildActiveScreen
-// setup_step → which permission step (0–4) child is currently on
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum PairingStatus { pending, linked, expired }

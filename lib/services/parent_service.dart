@@ -51,7 +51,7 @@ class ParentService {
         _col.doc(parentId).update({'fcm_token': newToken});
       });
     } catch (_) {
-    =
+    
     }
   }
 }

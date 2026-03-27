@@ -1,13 +1,6 @@
 // lib/screens/auth/splash_screen.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// FIXED: For child role, verifies Firestore link_status BEFORE routing.
 // If link_status is 'removed' or 'expired' — clears local storage and
 // routes to RegisterScreen instead of ChildActiveScreen.
-//
-// This handles the case where the child app was closed when unlinked —
-// on next launch it won't get stuck on the active screen.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -55,28 +48,20 @@ class _SplashScreenState extends State<SplashScreen>
 
     // ── Child role ─────────────────────────────────────────────────────────
     if (role == 'child' && linkId != null && linkId.isNotEmpty) {
-      // ✅ FIXED: Verify the link is still active in Firestore before routing.
-      // This catches the case where the child app was closed during unlinking.
       final isStillLinked = await _verifyChildLink(linkId);
 
       if (isStillLinked) {
         _go(const ChildActiveScreen());
       } else {
-        // Link was removed while app was closed — clear local data and
-        // send to RegisterScreen so child can pair again if needed.
         await prefs.remove('role');
         await prefs.remove('link_id');
         _go(const RegisterScreen());
       }
       return;
     }
-
-    // ── No valid session ───────────────────────────────────────────────────
     _go(const LoginScreen());
   }
 
-  // ── Check Firestore link_status ───────────────────────────────────────────
-  // Returns true only if document exists AND link_status == 'active'.
   Future<bool> _verifyChildLink(String linkId) async {
     try {
       final doc = await FirebaseFirestore.instance
@@ -89,8 +74,6 @@ class _SplashScreenState extends State<SplashScreen>
       final linkStatus = doc.data()!['link_status'] as String?;
       return linkStatus == 'active';
     } catch (_) {
-      // Network error — assume link is still valid to avoid logging
-      // the child out due to a temporary connectivity issue.
       return true;
     }
   }

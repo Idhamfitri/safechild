@@ -122,7 +122,7 @@ class PairingService {
         'android_version': info['version'],
         if (fcmToken != null) 'registration_token': fcmToken,
         'last_sync':       Timestamp.now(),
-        // Initialise permission_status map (all false until granted)
+      
         'permission_status': PermissionStatus().toMap(),
         'setup_complete': false,
       });
@@ -131,7 +131,7 @@ class PairingService {
       await _links.doc(linkDoc.id).update({
         'pairing_status': 'linked',
         'linked_at':      Timestamp.now(),
-        'setup_phase':    'paired',   // ← parent now shows "granting permissions"
+        'setup_phase':    'paired',  
         'setup_step':     0,
       });
 
@@ -143,7 +143,7 @@ class PairingService {
   }
 
   /// Called after each permission is granted during setup wizard.
-  /// Updates BOTH the setup_step in link AND the permission field in device.
+  
   Future<void> updatePermissionGranted({
     required String linkId,
     required String deviceId,
@@ -162,8 +162,7 @@ class PairingService {
     ]);
   }
 
-  /// Called when child arrives at ChildActiveScreen — all setup is complete.
-  /// Sets setup_phase = 'active' which triggers parent navigation.
+  
   Future<void> markSetupComplete({
     required String linkId,
     required String deviceId,

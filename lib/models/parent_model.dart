@@ -1,9 +1,7 @@
 // lib/models/parent_model.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
-
 class ParentModel {
-  final String parentId;   // = Firebase Auth UID
+  final String parentId;   
   final String email;
   final String fullName;
   final DateTime dateCreated;
@@ -16,7 +14,6 @@ class ParentModel {
     required this.dateCreated,
     this.isActive = true,
   });
-
   factory ParentModel.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
     final d = doc.data()!;
     return ParentModel(
@@ -27,7 +24,6 @@ class ParentModel {
       isActive: d['is_active'] ?? true,
     );
   }
-
   Map<String, dynamic> toFirestore() => {
         'email': email,
         'full_name': fullName,

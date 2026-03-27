@@ -1,12 +1,6 @@
 // lib/services/incident_service.dart
-// ─────────────────────────────────────────────────────────────────────────────
 // Reads from Firestore collection: incidents
 // Uses Firestore Snapshot Listener — fires instantly when Module 2 content
-// detection writes a new incident (MODULE3_WORKFLOW Part 3).
-//
-// Only incidents with confidence_score >= 0.5 are in Firestore.
-// Only those with score >= 0.75 also have is_alert_send = true.
-// ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/incident_model.dart';

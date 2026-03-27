@@ -419,7 +419,7 @@ class _MiniStatusStrip extends StatelessWidget {
             label:     hb.lastSeenLabel,
             bgColor:   Colors.grey.withOpacity(0.1),
           ),
-          // Device admin chip commented out — re-enable in Module 4
+  
           // const SizedBox(width: 6),
           // _chip(
           //   icon:      Icons.admin_panel_settings_outlined,

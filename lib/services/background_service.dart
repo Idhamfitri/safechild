@@ -74,10 +74,10 @@ Future<void> onStart(ServiceInstance service) async {
     }
   } catch (_) {}
 
-  // Stop command from app
+ 
   service.on('stopService').listen((_) => service.stopSelf());
 
-  // First heartbeat immediately
+
   await _sendHeartbeat(service);
 
   // Then every 10 minutes
@@ -101,7 +101,7 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
     int? batteryLevel;
     try { batteryLevel = await Battery().batteryLevel; } catch (_) {}
 
-    // ── Heartbeat only — no permission checks (MethodChannel = main isolate only)
+    // ── Heartbeat  
     await db.collection('heartbeat').doc(deviceId).set({
       'device_id':         deviceId,
       'last_sync':         Timestamp.fromDate(now),
@@ -110,15 +110,12 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
       if (batteryLevel != null) 'battery_level': batteryLevel,
     }, SetOptions(merge: true));
 
-    // ── Update last_seen only ─────────────────────────────────────────────
+    // ── Update last_seen ─────────────────────────────────────────────
     await db.collection('child_devices').doc(deviceId).update({
       'last_seen': Timestamp.fromDate(now),
     });
 
-    // ── Usage stats — NativeChannelService won't work here either
-    // Move this to main isolate in Module 3
-    
-    // ── Update notification ───────────────────────────────────────────────
+  
     if (service is AndroidServiceInstance) {
       service.setForegroundNotificationInfo(
         title:   'SafeChild Active',
