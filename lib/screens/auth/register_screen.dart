@@ -168,9 +168,6 @@ class _RegisterScreenState extends State<RegisterScreen>
         behavior: SnackBarBehavior.floating));
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  BUILD
-  // ═══════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(

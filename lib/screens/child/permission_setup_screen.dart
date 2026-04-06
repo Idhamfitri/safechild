@@ -11,6 +11,8 @@ import '../../utils/app_theme.dart';
 import '../auth/register_screen.dart';
 import 'child_active_screen.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
+import 'package:usage_stats/usage_stats.dart';
+import 'package:device_policy_manager/device_policy_manager.dart';
 
 class _PermStep {
   final IconData icon;
@@ -30,6 +32,7 @@ enum _PermType {
   systemAlertWindow,
   usageAccess,
   accessibility,
+  deviceAdmin,
 }
 
 enum _StepStatus { idle, granted, denied, skipped }
@@ -59,6 +62,15 @@ const _steps = [
     reason: 'Allows SafeChild to read on-screen text for AI content analysis.',
     type: _PermType.accessibility, firestoreKey: 'accessibility',
   ),
+  _PermStep(
+    icon: Icons.admin_panel_settings_outlined,
+    title: 'Device Administrator',
+    subtitle: 'Module 4 — Anti-Bypass',
+    reason: 'Prevents SafeChild from being uninstalled without parent approval. '
+        'This is required for full child protection.',
+    type: _PermType.deviceAdmin,
+    firestoreKey: 'device_admin',
+  ),
 ];
 
 class PermissionSetupScreen extends StatefulWidget {
@@ -80,7 +92,7 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen>
   bool    _loading = false;
   bool    _waitingForSettings = false;
 
-  final _status = List<_StepStatus>.filled(4, _StepStatus.idle);
+  final _status = List<_StepStatus>.filled(5, _StepStatus.idle);
 
   @override
   void initState() {
@@ -145,21 +157,26 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen>
 
   // ── Real permission check for a given type ─────────────────────────────
   Future<bool> _checkPermission(_PermType type) async {
-    switch (type) {
-      case _PermType.notification:
-        return await Permission.notification.isGranted;
-      case _PermType.systemAlertWindow:
-        return await Permission.systemAlertWindow.isGranted;
-      case _PermType.usageAccess:
-        try {
-          return await NativeChannelService.checkUsageAccessGranted();
-        } catch (_) {
-          return false;
-        }
-      case _PermType.accessibility:
-        return await FlutterAccessibilityService.isAccessibilityPermissionEnabled() ?? false;
-    }
+  switch (type) {
+    case _PermType.notification:
+      return await Permission.notification.isGranted;
+
+    case _PermType.systemAlertWindow:
+      return await Permission.systemAlertWindow.isGranted;
+
+    case _PermType.usageAccess:
+      // usage_stats package — correct AppOpsManager check
+      return await UsageStats.checkUsagePermission() ?? false;
+
+    case _PermType.accessibility:
+      return await FlutterAccessibilityService
+              .isAccessibilityPermissionEnabled() ?? false;
+
+    case _PermType.deviceAdmin:
+      // device_policy_manager package — checks if admin is active
+      return await DevicePolicyManager.isPermissionGranted();
   }
+}
 
   // ── Re-check current step after returning from settings ───────────────
   Future<void> _recheckCurrentPermission() async {
@@ -196,12 +213,13 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen>
       switch (_steps[_current].type) {
 
         case _PermType.notification:
-          final result = await Permission.notification.request();
-          if (result.isGranted) {
-            _applyStatus(_current, _StepStatus.granted);
-          } else {
-            _applyStatus(_current, _StepStatus.denied);
-          }
+          _waitingForSettings = true;
+          AndroidIntent(
+            action: 'android.settings.APP_NOTIFICATION_SETTINGS',
+            arguments: <String, dynamic>{
+              'android.provider.extra.APP_PACKAGE': 'com.safechild.safechild',
+            },
+          ).launch();
           break;
 
         case _PermType.systemAlertWindow:
@@ -214,14 +232,25 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen>
 
         case _PermType.usageAccess:
           _waitingForSettings = true;
-          const AndroidIntent(
-            action: 'android.settings.USAGE_ACCESS_SETTINGS',
-          ).launch();
+          // usage_stats package opens Usage Access settings directly
+          UsageStats.grantUsagePermission();
           break;
 
         case _PermType.accessibility:
           _waitingForSettings = true;
           await FlutterAccessibilityService.requestAccessibilityPermission();
+          break;
+        
+        case _PermType.deviceAdmin:
+          _waitingForSettings = true;
+          // device_policy_manager opens Device Admin activation screen
+          await DevicePolicyManager.requestPermession('SafeChild needs Device Administrator access to prevent unauthorized uninstallation and protect your child.');
+          // requestPermession returns true when granted — recheck immediately
+          final granted = await DevicePolicyManager.isPermissionGranted();
+          if (granted) {
+            _waitingForSettings = false;
+            _applyStatus(_current, _StepStatus.granted);
+          }
           break;
       }
     } catch (_) {
@@ -444,6 +473,36 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen>
                         child: Text(
                           'After tapping Allow, find SafeChild in the '
                           'Installed Apps list and toggle it ON.',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFFE65100),
+                              height: 1.5),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ],
+
+                // Device Admin extra hint
+                if (step.type == _PermType.deviceAdmin) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFFFCC02)),
+                    ),
+                    child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Icon(Icons.lightbulb_outline,
+                          size: 16, color: Color(0xFFE65100)),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Tap Activate on the next screen. '
+                          'This prevents the app from being uninstalled without parent permission.',
                           style: TextStyle(
                               fontSize: 12,
                               color: Color(0xFFE65100),

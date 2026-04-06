@@ -116,6 +116,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
                   deviceId: widget.deviceId,
                   tabCtrl:  _screenTimeTab,
                 ),
+                
                 const SizedBox(height: 14),
                 _RecentAppsSection(deviceId: widget.deviceId),
                 const SizedBox(height: 14),
@@ -1174,6 +1175,7 @@ class _PermissionCard extends StatelessWidget {
     final bool notifications = permMap?['notifications'] == true;
     final bool overlay       = permMap?['overlay']       == true;
     final bool usageAccess   = permMap?['usage_access']  == true;
+    final bool deviceAdmin   = permMap?['device_admin']  == true;
 
     final lastUpdated = permMap?['last_updated'];
     String updatedLabel = '';
@@ -1227,10 +1229,17 @@ class _PermissionCard extends StatelessWidget {
               icon:  Icons.bar_chart_outlined,
               label: 'Usage Access',
               isOn:  usageAccess),
+          const SizedBox(height: 10),
+          _StatusRow(
+              icon:  Icons.admin_panel_settings_outlined,
+              label: 'Device Administrator',
+              isOn:  deviceAdmin),
           if (!accessibility)
             _WarningBanner(
-                message: 'Accessibility Service is OFF — '
-                    'AI content detection is not running.'),
+                message: 'Accessibility Service is OFF — ''AI content detection is not running.'),
+          if (!deviceAdmin)
+            _WarningBanner(
+                message: 'Device Admin is OFF — ' 'app can be uninstalled by child.'),
         ]),
       ),
     );

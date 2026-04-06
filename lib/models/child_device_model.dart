@@ -51,15 +51,15 @@ class ChildDeviceModel {
   final String           deviceModel;
   final String           manufacturer;
   final String           androidVersion;
-  // android_sdk removed
+
   final DateTime         dateCreated;
   final DateTime?        lastSync;
-  final String?          registrationToken; // kept in model for FCM — not displayed in UI
+  final String?          registrationToken;
   final bool             setupComplete;
   final PermissionStatus permissionStatus;
   final String?          imageUrl;
 
-  // Infused from heartbeat — updated by child_active_screen every 10 min
+
   final int?     batteryLevel;
   final String   signalStatus;
   final bool     safechidRunning;
@@ -96,7 +96,6 @@ class ChildDeviceModel {
       deviceModel:    d['device_model']     ?? '',
       manufacturer:   d['manufacturer']    ?? '',
       androidVersion: d['android_version'] ?? '',
-      // android_sdk intentionally not read
       dateCreated:    (d['date_created'] as Timestamp).toDate(),
       lastSync: d['last_sync'] != null
           ? (d['last_sync'] as Timestamp).toDate()

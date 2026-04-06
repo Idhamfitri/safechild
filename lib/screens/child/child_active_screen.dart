@@ -12,6 +12,8 @@ import '../../utils/app_theme.dart';
 import '../auth/register_screen.dart';
 import 'package:pinput/pinput.dart';
 import '../../services/pairing_service.dart';
+import 'package:usage_stats/usage_stats.dart';
+import 'package:device_policy_manager/device_policy_manager.dart';
 
 class ChildActiveScreen extends StatefulWidget {
   const ChildActiveScreen({super.key});
@@ -88,28 +90,29 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
 
   // ── Write real permissions from main isolate to child_devices ─────────────
   Future<void> _updatePermissions() async {
-    if (_deviceId == null) return;
-    try {
-      final accessibility = await FlutterAccessibilityService
-              .isAccessibilityPermissionEnabled() ?? false;
-      final usageAccess   = await NativeChannelService.checkUsageAccessGranted();
-      final deviceAdmin   = await NativeChannelService.checkDeviceAdminActive();
-      final notification  = await Permission.notification.isGranted;
-      final overlay       = await Permission.systemAlertWindow.isGranted;
+  if (_deviceId == null) return;
+  try {
+    final accessibility = await FlutterAccessibilityService
+            .isAccessibilityPermissionEnabled() ?? false;
+    final notification  = await Permission.notification.isGranted;
+    final overlay       = await Permission.systemAlertWindow.isGranted;
+    // Use packages directly — no native channel needed
+    final usageAccess   = await UsageStats.checkUsagePermission() ?? false  ;
+    final deviceAdmin   = await DevicePolicyManager.isPermissionGranted();
 
-      await FirebaseFirestore.instance
-          .collection('child_devices')
-          .doc(_deviceId)
-          .update({
-        'permission_status.accessibility': accessibility,
-        'permission_status.usage_access':  usageAccess,
-        'permission_status.device_admin':  deviceAdmin,
-        'permission_status.notifications': notification,
-        'permission_status.overlay':       overlay,
-        'permission_status.last_updated':  FieldValue.serverTimestamp(),
-      });
-    } catch (_) {}
-  }
+    await FirebaseFirestore.instance
+        .collection('child_devices')
+        .doc(_deviceId)
+        .update({
+      'permission_status.accessibility': accessibility,
+      'permission_status.usage_access':  usageAccess,
+      'permission_status.device_admin':  deviceAdmin,
+      'permission_status.notifications': notification,
+      'permission_status.overlay':       overlay,
+      'permission_status.last_updated':  FieldValue.serverTimestamp(),
+    });
+  } catch (_) {}
+}
 
   Future<void> _forceLogout() async {
     if (_unlinking || !mounted) return;

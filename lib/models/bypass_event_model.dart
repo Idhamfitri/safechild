@@ -1,20 +1,4 @@
 // lib/models/bypass_event_model.dart
-// ─────────────────────────────────────────────────────────────────────────────
-// Maps to Firestore collection: bypass_events/{bypass_id}
-// Written instantly by the child device when a bypass attempt is detected.
-// Triggers immediate FCM notification to parent (Part 1, MODULE3_WORKFLOW).
-//
-// Schema (MODULE3_WORKFLOW Part 4):
-//   device_id         – which child device
-//   event_type        – "uninstall_attempt" | "settings_access" |
-//                       "permission_revoked" | "heartbeat_loss" | "safe_mode_boot"
-//   event_description – human-readable description
-//   is_blocked        – true if bypass was blocked, false if not (permission revoked)
-//   is_reviewed       – parent has viewed the alert
-//   is_alert_send     – FCM was sent to parent
-//   alert_send_at     – when FCM was sent
-//   detected_at       – when bypass was detected
-// ─────────────────────────────────────────────────────────────────────────────
 
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
