@@ -12,6 +12,9 @@ class BypassDetectionService {
   String?             _deviceId;
   DateTime?           _lastRedirect;
   DateTime?           _lastSettingsLog;
+  DateTime?           _lastDangerousLog;
+  // Per-package log throttle — prevents spam in terminal
+  final Map<String, DateTime> _lastLogTime = {};
 
   // ── Settings packages to monitor ─────────────────────────────────────
   static const _settingsPackages = {
@@ -69,6 +72,12 @@ class BypassDetectionService {
   void _onEvent(AccessibilityEvent event) {
     final pkg  = event.packageName?.toLowerCase() ?? '';
     
+    // ── Throttle debug logs — max one log per pkg per 2 seconds ──────────
+    final now = DateTime.now();
+    final lastLog = _lastLogTime[pkg];
+    final shouldLog = lastLog == null || now.difference(lastLog).inSeconds >= 2;
+    if (shouldLog) _lastLogTime[pkg] = now;
+    
     // ── Is this a settings package? ─────────────────────────────────
     final isSettings = _settingsPackages.any((p) => pkg.contains(p));
     if (!isSettings) return;
@@ -87,10 +96,10 @@ class BypassDetectionService {
     debugPrint('BYPASS: settings screen detected — pkg=$pkg text=$text');
 
     // ── Log settings access (throttled) ───────────────────────────────
-    final now = DateTime.now();
+    final logNow = DateTime.now();
     if (_lastSettingsLog == null ||
-        now.difference(_lastSettingsLog!) > _logCooldown) {
-      _lastSettingsLog = now;
+        logNow.difference(_lastSettingsLog!) > _logCooldown) {
+      _lastSettingsLog = logNow;
       _logBypassEvent(
         eventType:   'settings_access',
         description: 'Child opened system settings',
@@ -101,35 +110,22 @@ class BypassDetectionService {
     // ── Check for dangerous keywords → redirect ────────────────────────
     final eventString = event.toString().toLowerCase();
     
-    bool isDangerous = false;
-
-    // 1. Are they specifically looking at SafeChild inside a settings/installer context?
-    // If 'safechild' appears anywhere on the screen (App Info, App List, Play Store), block it.
-    if (text.contains('safechild') || eventString.contains('safechild')) {
-      isDangerous = true;
-    }
-
-    // 2. Are they on a known dangerous Android internal Activity?
-    // This bypasses any local language translation of the UI text.
-    if (eventString.contains('deviceadmin') || 
-        eventString.contains('accessibilitysettings') ||
-        eventString.contains('devicepolicy')) {
-      isDangerous = true;
-    }
-
-    // 3. Are they seeing specific dangerous action buttons?
-    if (_dangerousActions.any((action) => text.contains(action))) {
-      isDangerous = true;
-    }
+    // We only trigger protection if the target app is literally 'safechild'
+    bool isDangerous = text.contains('safechild') || eventString.contains('safechild');
 
     if (isDangerous) {
       debugPrint('BYPASS: dangerous settings page detected — redirecting');
       _redirectToHome();
-      _logBypassEvent(
-        eventType:   'settings_access',
-        description: 'Child attempted to access SafeChild settings/uninstall: "$text"',
-        isBlocked:   true,
-      );
+      
+      // Prevent 3-5 simultaneous Native Android events from writing 5 Firebase logs instantly
+      if (_lastDangerousLog == null || logNow.difference(_lastDangerousLog!) > _redirectCooldown) {
+        _lastDangerousLog = logNow;
+        _logBypassEvent(
+          eventType:   'settings_access',
+          description: 'Child attempted to access SafeChild settings/uninstall.',
+          isBlocked:   true,
+        );
+      }
     }
   }
 

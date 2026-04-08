@@ -6,7 +6,6 @@ class HeartbeatModel {
   final String    deviceId;
   final DateTime? lastSync;
   final String    signalStatus;    // 'active' | 'lost'
-  final bool      safechidRunning;
   final bool      accessibilityActive;
 
   final int?      batteryLevel;
@@ -15,7 +14,6 @@ class HeartbeatModel {
     required this.deviceId,
     this.lastSync,
     this.signalStatus      = 'lost',
-    this.safechidRunning   = false,
     this.accessibilityActive = false,
     this.batteryLevel,
   });
@@ -29,13 +27,18 @@ class HeartbeatModel {
           ? (d['last_sync'] as Timestamp).toDate()
           : null,
       signalStatus:         d['signal_status']      ?? 'lost',
-      safechidRunning:      d['safechild_running']   ?? false,
       accessibilityActive:  d['accessibility_active'] ?? false,
       batteryLevel:         (d['battery_level'] as num?)?.toInt(),
     );
   }
 
-  bool get isOnline => signalStatus == 'active';
+  /// True only if last heartbeat arrived within the last 15 minutes.
+  /// If last_sync is missing or > 15 min old, the device is considered Offline.
+  /// This correctly handles: phone off, no internet, app killed.
+  bool get isOnline {
+    if (lastSync == null) return false;
+    return DateTime.now().difference(lastSync!).inMinutes < 15;
+  }
 
   String get lastSeenLabel {
     if (lastSync == null) return 'Never';

@@ -378,53 +378,6 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
                       height: 1.6),
                 ),
 
-                const SizedBox(height: 32),
-
-                // Monitoring active badge
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(
-                        color: AppColors.primary.withOpacity(0.2)),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.circle,
-                          size: 10, color: Color(0xFF2E7D32)),
-                      SizedBox(width: 8),
-                      Text('Monitoring Active',
-                          style: TextStyle(
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13)),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // Add Parent button
-                TextButton.icon(
-                  onPressed: _showAddParentDialog,
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('Add Parent'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.white,
-                    backgroundColor: AppColors.primary,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 10),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20)),
-                    textStyle: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600),
-                  ),
-                ),
-
               ],
             ),
           ),

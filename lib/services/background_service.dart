@@ -4,11 +4,13 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:device_policy_manager/device_policy_manager.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:usage_stats/usage_stats.dart';
 import 'native_channel_service.dart';
 
 const _kNotifChannelId   = 'safechild_monitoring';
@@ -106,7 +108,6 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
       'device_id':         deviceId,
       'last_sync':         Timestamp.fromDate(now),
       'signal_status':     'active',
-      'safechild_running': true,
       if (batteryLevel != null) 'battery_level': batteryLevel,
     }, SetOptions(merge: true));
 
@@ -114,7 +115,27 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
       'last_seen': Timestamp.fromDate(now),
     }, SetOptions(merge: true));
 
-  
+    // Write today's usage stats to screen_time/{deviceId}/daily/{date}
+    await _writeUsageStats(db, deviceId, now);
+
+    // ── Re-check permissions from background isolate ────────────
+    // Note: Only usage_access and device_admin can be checked here.
+    // Accessibility & overlay require main isolate (MethodChannel).
+    bool? usageAccess;
+    bool? deviceAdmin;
+    try { usageAccess = await UsageStats.checkUsagePermission(); } catch (_) {}
+    try { deviceAdmin = await DevicePolicyManager.isPermissionGranted(); } catch (_) {}
+
+    if (usageAccess != null || deviceAdmin != null) {
+      final updates = <String, dynamic>{};
+      if (usageAccess != null) updates['permission_status.usage_access']  = usageAccess;
+      if (deviceAdmin != null)  updates['permission_status.device_admin'] = deviceAdmin;
+      updates['permission_status.last_updated'] = Timestamp.fromDate(now);
+      try {
+        await db.collection('child_devices').doc(deviceId).update(updates);
+      } catch (_) {}
+    }
+
     if (service is AndroidServiceInstance) {
       service.setForegroundNotificationInfo(
         title:   'SafeChild Active',
