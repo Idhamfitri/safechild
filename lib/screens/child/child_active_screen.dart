@@ -24,7 +24,7 @@ class ChildActiveScreen extends StatefulWidget {
 }
 
 class _ChildActiveScreenState extends State<ChildActiveScreen> {
-  StreamSubscription<DocumentSnapshot>? _linkSub;
+  StreamSubscription<QuerySnapshot>? _linkSub;
   bool    _unlinking = false;
   String? _deviceId;
   String? _linkId;
@@ -79,17 +79,31 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
     // Start background service — owns heartbeat, survives app kill
     await BackgroundServiceManager.initialize();
 
-    // Listen for parent unlink
+    // Listen for ALL parent links (Many-to-Many architecture)
     _linkSub = FirebaseFirestore.instance
         .collection('parent_child_links')
-        .doc(_linkId)
+        .where('device_id', isEqualTo: _deviceId)
         .snapshots()
-        .listen((doc) {
+        .listen((snap) async {
       if (!mounted) return;
-      if (!doc.exists) { _forceLogout(); return; }
-      final ls = doc.data()?['link_status']    as String?;
-      final ps = doc.data()?['pairing_status'] as String?;
-      if (ls == 'removed' || ps == 'expired') _forceLogout();
+
+      // In-memory filter to avoid composite index requirements
+      final activeLinks = snap.docs.where((doc) {
+        final data = doc.data();
+        return data['link_status'] == 'active' && data['pairing_status'] != 'expired';
+      }).toList();
+
+      // If active parents drop to 0, unlock the device admin and sign out
+      if (activeLinks.isEmpty) {
+        debugPrint('CHILD_ACTIVE: No active parents remain. Removing Device Admin and logging out.');
+        
+        try {
+          // Voluntarily drop the Android Uninstall Protection (fire-and-forget to prevent MethodChannel hang)
+          DevicePolicyManager.removeActiveAdmin();
+        } catch (_) {}
+        
+        _forceLogout();
+      }
     }, onError: (_) {});
   }
 
@@ -123,10 +137,11 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
     if (_unlinking || !mounted) return;
     setState(() => _unlinking = true);
 
-    await _detectionService.stop();
-    await _bypassService.stop();
-    await BackgroundServiceManager.stop();
-    await _linkSub?.cancel();
+    // Fire-and-forget stop calls so we never hang if a background plugin misbehaves
+    _detectionService.stop();
+    _bypassService.stop();
+    BackgroundServiceManager.stop();
+    _linkSub?.cancel();
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('role');
@@ -135,55 +150,14 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
 
     if (!mounted) return;
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 64, height: 64,
-            decoration: BoxDecoration(
-                color: AppColors.error.withOpacity(0.1),
-                shape: BoxShape.circle),
-            child: const Icon(Icons.link_off,
-                size: 34, color: AppColors.error),
-          ),
-          const SizedBox(height: 16),
-          const Text('Device Unlinked',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary),
-              textAlign: TextAlign.center),
-          const SizedBox(height: 10),
-          const Text(
-            'The parent has removed this device from SafeChild. '
-            'Monitoring has stopped.',
-            style: TextStyle(
-                fontSize: 13,
-                color: AppColors.textSub,
-                height: 1.5),
-            textAlign: TextAlign.center,
-          ),
-        ]),
-        actionsAlignment: MainAxisAlignment.center,
-        actions: [
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(0, 44)),
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ),
-        ],
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Device Unlinked: SafeChild deactivated.'),
+        backgroundColor: AppColors.error,
+        duration: Duration(seconds: 4),
       ),
     );
 
-    if (!mounted) return;
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const RegisterScreen()),

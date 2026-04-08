@@ -13,7 +13,7 @@ class ContentDetectionService {
   
   final _geminiModel = FirebaseAI.googleAI().generativeModel(model: 'gemini-2.5-flash-lite');
   final _db = FirebaseFirestore.instance;
-  StreamSubscription? _accessibilitySubscription;
+  static StreamSubscription? _accessibilitySubscription;
   String?             _deviceId;
   final Map<String, DateTime> _lastProcessed = {};
   static const _debounceDuration = Duration(seconds: 5);

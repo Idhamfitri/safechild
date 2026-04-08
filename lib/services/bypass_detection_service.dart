@@ -8,7 +8,7 @@ import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BypassDetectionService {
-  StreamSubscription? _subscription;
+  static StreamSubscription? _subscription;
   String?             _deviceId;
   DateTime?           _lastRedirect;
   DateTime?           _lastSettingsLog;
