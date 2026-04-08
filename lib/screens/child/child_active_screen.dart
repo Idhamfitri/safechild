@@ -7,6 +7,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/background_service.dart';
 import '../../services/content_detection_service.dart';
+import '../../services/bypass_detection_service.dart';
 import '../../services/native_channel_service.dart';
 import '../../utils/app_theme.dart';
 import '../auth/register_screen.dart';
@@ -29,6 +30,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
   String? _linkId;
 
   final _detectionService = ContentDetectionService();
+  final _bypassService    = BypassDetectionService();
 
   @override
   void initState() {
@@ -66,6 +68,9 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
 
     // Start content detection
     await _detectionService.start();
+    
+    // Start bypass detection
+    await _bypassService.start();
 
     // Write real permission status from main isolate
     // Must be done here — MethodChannel only works on main isolate
@@ -119,6 +124,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
     setState(() => _unlinking = true);
 
     await _detectionService.stop();
+    await _bypassService.stop();
     await BackgroundServiceManager.stop();
     await _linkSub?.cancel();
 
@@ -349,6 +355,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
   @override
   void dispose() {
     _detectionService.stop();
+    _bypassService.stop();
     _linkSub?.cancel();
 
     super.dispose();

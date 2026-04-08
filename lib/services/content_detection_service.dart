@@ -62,13 +62,18 @@ class ContentDetectionService {
 
 
 
-  // Packages to ignore 
+// Packages to ignore 
 static const _ignoredPackages = {
   'com.android.systemui',
   'com.android.launcher3',
   'com.miui.home',
   'com.miui.systemui',
   'com.safechild.safechild',
+  'com.android.settings',
+  'com.miui.securitycenter',
+  'com.miui.permcenter',
+  'com.google.android.packageinstaller',
+  'com.android.packageinstaller',
 };
 
 void _onAccessibilityEvent(AccessibilityEvent event) {

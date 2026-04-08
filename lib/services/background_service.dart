@@ -110,10 +110,9 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
       if (batteryLevel != null) 'battery_level': batteryLevel,
     }, SetOptions(merge: true));
 
-    // ── Update last_seen ─────────────────────────────────────────────
-    await db.collection('child_devices').doc(deviceId).update({
+    await db.collection('child_devices').doc(deviceId).set({
       'last_seen': Timestamp.fromDate(now),
-    });
+    }, SetOptions(merge: true));
 
   
     if (service is AndroidServiceInstance) {
