@@ -17,6 +17,7 @@ class _AlertEntry {
   final DateTime  timestamp;
   final bool      isRead;
   final bool      isBlocked;
+  final bool      isFalsePositive;
   final double?   confidenceScore;
   final _AlertKind kind;
 
@@ -30,6 +31,7 @@ class _AlertEntry {
     required this.timestamp,
     required this.isRead,
     required this.isBlocked,
+    required this.isFalsePositive,
     this.confidenceScore,
     required this.kind,
   });
@@ -70,6 +72,12 @@ class _NotificationAlertScreenState
     }
   }
 
+  Future<void> _markFalsePositive(_AlertEntry entry) async {
+    if (entry.kind == _AlertKind.incident) {
+      await _incidentService.markFalsePositive(entry.id);
+    }
+  }
+
   Future<void> _markAllRead(List<_AlertEntry> entries) async {
     for (final e in entries.where((e) => !e.isRead)) {
       await _markRead(e);
@@ -101,6 +109,7 @@ class _NotificationAlertScreenState
           timestamp:   b.detectedAt,
           isRead:      b.isReviewed,
           isBlocked:   b.isBlocked,
+          isFalsePositive: false,
           kind:        _AlertKind.bypass,
         ));
       }
@@ -119,6 +128,7 @@ class _NotificationAlertScreenState
           timestamp:       i.detectedAt,
           isRead:          i.isReviewed,
           isBlocked:       false,
+          isFalsePositive: i.isFalsePositive,
           confidenceScore: i.confidenceScore,
           kind:            _AlertKind.incident,
         ));
@@ -268,8 +278,9 @@ class _NotificationAlertScreenState
           ),
 
         ...entries.map((e) => _AlertTile(
-              entry:      e,
-              onMarkRead: () => _markRead(e),
+              entry:               e,
+              onMarkRead:          () => _markRead(e),
+              onMarkFalsePositive: () => _markFalsePositive(e),
             )),
       ],
     );
@@ -349,8 +360,9 @@ class _FilterChip extends StatelessWidget {
 class _AlertTile extends StatelessWidget {
   final _AlertEntry  entry;
   final VoidCallback onMarkRead;
+  final VoidCallback onMarkFalsePositive;
 
-  const _AlertTile({required this.entry, required this.onMarkRead});
+  const _AlertTile({required this.entry, required this.onMarkRead, required this.onMarkFalsePositive});
 
   @override
   Widget build(BuildContext context) {
@@ -492,7 +504,24 @@ class _AlertTile extends StatelessWidget {
                           : AppColors.statusPending,
                     ),
 
+                  // False Positive badge
+                  if (entry.isFalsePositive)
+                    _badge('False Positive', AppColors.textSub),
+
                   const Spacer(),
+
+                  if (!entry.isRead && entry.kind == _AlertKind.incident) ...[
+                    GestureDetector(
+                      onTap: onMarkFalsePositive,
+                      child: const Text('False Positive',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.textSub,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline)),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
 
                   if (!entry.isRead)
                     GestureDetector(

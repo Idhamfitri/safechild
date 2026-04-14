@@ -2,268 +2,285 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:firebase_ai/firebase_ai.dart';
+import 'package:firebase_ai/firebase_ai.dart'; 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-
 class ContentDetectionService {
+  // Use gemini-1.5-flash for the best balance of speed and cost
+  final _geminiModel = FirebaseAI.googleAI()
+      .generativeModel(model: 'gemini-2.5-flash-lite'); 
   
-  final _geminiModel = FirebaseAI.googleAI().generativeModel(model: 'gemini-2.5-flash-lite');
   final _db = FirebaseFirestore.instance;
   static StreamSubscription? _accessibilitySubscription;
-  String?             _deviceId;
+  String? _deviceId;
+
+  // ── Optimization State ────────────────────────────────────────────────
   final Map<String, DateTime> _lastProcessed = {};
   static const _debounceDuration = Duration(seconds: 5);
+  
+  String? _lastTextProcessed; 
+  DateTime? _lastTextTime;
 
+  final Map<String, DateTime> _lastHarmfulTime = {};
+  static const _harmfulCooldown = Duration(seconds: 30);
+
+  // ── Monitoring Config ─────────────────────────────────────────────────
+  static const _monitoredPackages = {
+    'com.whatsapp',
+    'com.android.chrome',
+    'com.instagram.android',
+    'com.ss.android.ugc.trill', // TikTok
+    'org.telegram.messenger',
+    'com.google.android.youtube',
+    'com.facebook.katana',
+    'com.twitter.android',
+    'x.com',
+  };
+
+  static const _uiPatterns = [
+    'send', 'cancel', 'ok', 'back', 'next', 'reply', 'like', 'share', 
+    'follow', 'block', 'settings', 'menu', 'home', 'search', 'loading', 
+    'refresh', 'tap to load', 'type a message', 'write a comment',
+    'battery', 'wifi', 'bluetooth', 'yesterday', 'today', 'just now',
+    'seen', 'delivered', 'online',
+  ];
+
+  // Local "Red Flag" keywords (Malay + English)
+  static const _localTriggers = [
+    'babi', 'pukimak', 'anjing', 'bodoh', 'sial', 'pantat', 'kepala bapak',
+    'stupid', 'idiot', 'kill yourself', 'hate you', 'f*ck', 'retard', 'die'
+  ];
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Lifecycle
+  // ─────────────────────────────────────────────────────────────────────
 
   Future<void> start() async {
-    if (_accessibilitySubscription != null) {
-      debugPrint('SAFECHILD: detection already running, ignoring start request');
-      return;
-    }
+    if (_accessibilitySubscription != null) return;
 
     final prefs = await SharedPreferences.getInstance();
-    _deviceId   = prefs.getString('device_id');
+    _deviceId = prefs.getString('device_id');
 
     if (_deviceId == null || _deviceId!.isEmpty) {
-      debugPrint('SAFECHILD: start() aborted — device_id not found');
+      debugPrint('SAFECHILD: device_id not found. Cannot start logging.');
       return;
     }
-    debugPrint('SAFECHILD: start() — device_id = $_deviceId');
 
-    // Soft check — log only, do NOT return on false (unreliable on Xiaomi)
-    try {
-      final enabled =
-          await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
-      debugPrint('SAFECHILD: accessibility permission check = $enabled');
-    } catch (e) {
-      debugPrint('SAFECHILD: permission check failed — $e — proceeding anyway');
-    }
+    await Future.delayed(const Duration(seconds: 2));
 
-    // Delay gives accessibility service time to fully initialise
-    await Future.delayed(const Duration(seconds: 3));
-
-    try {
-      _accessibilitySubscription =
-          FlutterAccessibilityService.accessStream.listen(
-        _onAccessibilityEvent,
-        onError: (e) => debugPrint('SAFECHILD: stream error — $e'),
-        onDone:  ()  => debugPrint('SAFECHILD: stream closed'),
-      );
-      debugPrint('SAFECHILD: accessibility stream subscription started ✓');
-    } catch (e) {
-      debugPrint('SAFECHILD: failed to subscribe to accessStream — $e');
-    }
+    _accessibilitySubscription = FlutterAccessibilityService.accessStream.listen(
+      _onAccessibilityEvent,
+      onError: (e) => debugPrint('SAFECHILD: stream error — $e'),
+    );
+    debugPrint('SAFECHILD: service started for $_deviceId ✓');
   }
 
   Future<void> stop() async {
     await _accessibilitySubscription?.cancel();
     _accessibilitySubscription = null;
-    debugPrint('SAFECHILD: detection stopped');
+    debugPrint('SAFECHILD: service stopped.');
   }
 
+  // ─────────────────────────────────────────────────────────────────────
+  // Event Handler
+  // ─────────────────────────────────────────────────────────────────────
 
+  void _onAccessibilityEvent(AccessibilityEvent event) {
+    final sourceApp = event.packageName ?? 'unknown';
 
-// Packages to ignore 
-static const _ignoredPackages = {
-  'com.android.systemui',
-  'com.android.launcher3',
-  'com.miui.home',
-  'com.miui.systemui',
-  'com.safechild.safechild',
-  'com.android.settings',
-  'com.miui.securitycenter',
-  'com.miui.permcenter',
-  'com.google.android.packageinstaller',
-  'com.android.packageinstaller',
-};
+    // 1. App Whitelist
+    if (!_monitoredPackages.any((pkg) => sourceApp.contains(pkg))) return;
 
-void _onAccessibilityEvent(AccessibilityEvent event) {
-  final sourceApp = event.packageName ?? 'unknown';
+    // 2. Extract and Clean Text
+    String? rawText;
+    if (event.text != null && event.text != 'null' && event.text!.trim().isNotEmpty) {
+      rawText = _cleanText(event.text!);
+    }
 
-  // Skip system packages 
-  if (_ignoredPackages.any((pkg) => sourceApp.contains(pkg))) return;
+    // Fallback to subNodes (common in list views/chats)
+    if ((rawText == null || rawText.isEmpty) && event.subNodes != null) {
+      final subTexts = event.subNodes!
+          .where((n) => n.text != null && n.text != 'null')
+          .map((n) => _cleanText(n.text!))
+          .where((t) => t.isNotEmpty && !_isUIText(t))
+          .join(' ');
+      if (subTexts.isNotEmpty) rawText = subTexts;
+    }
 
-  String? rawText;
+    if (rawText == null || rawText.isEmpty) return;
 
-  final mainText = event.text;
-  if (mainText != null &&
-      mainText != 'null' &&
-      mainText.trim().isNotEmpty) {
-    rawText = _cleanText(mainText);
+    // 3. UI Label Filter (Skip "Send", "Cancel", etc.)
+    if (_isUIText(rawText)) return;
+
+    // 4. Deduplication (Skip identical events from scrolling)
+    if (_lastTextProcessed == rawText &&
+        _lastTextTime != null &&
+        DateTime.now().difference(_lastTextTime!) < const Duration(seconds: 3)) {
+      return;
+    }
+
+    // 5. App Debounce
+    final lastTime = _lastProcessed[sourceApp];
+    if (lastTime != null && DateTime.now().difference(lastTime) < _debounceDuration) {
+      return;
+    }
+
+    // Update tracking state
+    _lastProcessed[sourceApp] = DateTime.now();
+    _lastTextProcessed = rawText;
+    _lastTextTime = DateTime.now();
+
+    debugPrint('SAFECHILD: event from $sourceApp → "$rawText"');
+
+    _processText(rawText, sourceApp);
   }
 
-  // Fallback — subNodes
-  if (rawText == null && event.subNodes != null) {
-    final subTexts = event.subNodes!
-        .where((n) =>
-            n.text != null &&
-            n.text != 'null' &&
-            n.text!.trim().isNotEmpty)
-        .map((n) => _cleanText(n.text!))
+  bool _isUIText(String text) {
+    final lower = text.toLowerCase().trim();
+    // Filter out patterns and very short strings (noise)
+    return _uiPatterns.any((p) => lower == p || lower.length < 2);
+  }
+
+  String _cleanText(String raw) {
+    // Robust extraction from Android node dumps
+    final mTextMatches = RegExp(r'mText:\s*([^,}]+)')
+        .allMatches(raw)
+        .map((m) => m.group(1)?.trim() ?? '')
         .where((t) => t.isNotEmpty)
-        .join(' ');
-    if (subTexts.isNotEmpty) rawText = subTexts;
+        .toList();
+
+    if (mTextMatches.isNotEmpty) return mTextMatches.join(' ');
+
+    // Clean brackets and extra whitespace
+    return raw.replaceAll(RegExp(r'\[.*?\]'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
-  debugPrint('SAFECHILD: event from $sourceApp → "${rawText ?? "(empty)"}"');
-
-  if (rawText == null) return;
-
-  final lastTime = _lastProcessed[sourceApp];
-  if (lastTime != null &&
-      DateTime.now().difference(lastTime) < _debounceDuration) {
-    debugPrint('SAFECHILD: debounced $sourceApp — skipping');
-    return;
-  }
-  _lastProcessed[sourceApp] = DateTime.now();
-
-  _processText(rawText, sourceApp);
-}
-
-String _cleanText(String raw) {
-  // Extract mText values from Android span format
-  // e.g. {mText: hello world} → "hello world"
-  final mTextMatches = RegExp(r'mText:\s*([^}]+)')
-      .allMatches(raw)
-      .map((m) => m.group(1)?.trim() ?? '')
-      .where((t) => t.isNotEmpty)
-      .toList();
-
-  if (mTextMatches.isNotEmpty) {
-    return mTextMatches.join(' ');
-  }
-
-  // No span format — return cleaned raw text
-  return raw.replaceAll(RegExp(r'\s+'), ' ').trim();
-}
+  // ─────────────────────────────────────────────────────────────────────
+  // Pipeline
+  // ─────────────────────────────────────────────────────────────────────
 
   Future<void> _processText(String rawText, String sourceApp) async {
     final cleaned = _preprocess(rawText);
-    if (cleaned == null) {
-      debugPrint('SAFECHILD: skipped — less than 3 words');
-      return;
-    }
+    if (cleaned == null || _shouldIgnoreMessage(cleaned)) return;
+
     debugPrint('SAFECHILD: processing "$cleaned" from $sourceApp');
 
-    final connectivityResult = await Connectivity().checkConnectivity();
-    final isOnline =
-        connectivityResult.contains(ConnectivityResult.mobile) ||
-        connectivityResult.contains(ConnectivityResult.wifi);
-
-    debugPrint('SAFECHILD: online = $isOnline');
-
-    if (isOnline) {
-      await _classifyWithGemini(cleaned, sourceApp);
-    } else {
-      debugPrint('SAFECHILD: offline — skipping');
+    // 6. Local Keyword Pre-Filter
+    bool hasLocalTrigger = _localTriggers.any((word) => cleaned.contains(word));
+    
+    // Efficiency rule: Only AI-check if it has keywords OR is long enough to be a sentence
+    if (!hasLocalTrigger && cleaned.split(' ').length < 4) {
+      return; 
     }
+
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.contains(ConnectivityResult.none)) return;
+
+    await _classifyWithGemini(cleaned, sourceApp);
   }
 
   String? _preprocess(String raw) {
     final cleaned = raw.trim().toLowerCase();
-    final words   = cleaned.split(RegExp(r'\s+'));
-    if (words.length < 3) return null;
-    return cleaned;
+    final words = cleaned.split(RegExp(r'\s+'));
+    if (words.length < 2) return null;
+    return words.length > 100 ? words.take(60).join(' ') : cleaned;
   }
+
+  bool _shouldIgnoreMessage(String text) {
+    final lower = text.toLowerCase();
+    if (lower.contains('http') || lower.contains('.com')) return true;
+    if (RegExp(r'\.(pdf|apk|jpg|png|mp4)$').hasMatch(lower)) return true;
+    return false;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // AI Classification
+  // ─────────────────────────────────────────────────────────────────────
 
   Future<void> _classifyWithGemini(String text, String sourceApp) async {
     debugPrint('SAFECHILD: calling Gemini for "$text"');
     try {
       final prompt = '''
-Classify this text from a child's device.
-It may be Malay, English or mixed slang.
-Reply ONLY in this exact JSON format with no extra text:
-{"category":"safe/toxic/threatening","confidence":0.0}
+Analyze text from a child's phone for toxicity or cyberbullying.
+Languages: English, Malay, or Manglish slang (e.g. "ko bodoh", "pukimak").
+
+Categories:
+- "safe": Normal talk.
+- "toxic": Insults, swearing, threats, or sexual content.
+
+Return ONLY JSON:
+{"category":"safe/toxic","confidence":0.0,"snippet":"only the offensive part"}
+
 Text: "$text"
 ''';
 
-      final response = await _geminiModel.generateContent(
-          [Content.text(prompt)]);
+      final response = await _geminiModel.generateContent([Content.text(prompt)]);
       final result = response.text;
 
       debugPrint('SAFECHILD: gemini response = $result');
 
-      if (result != null && result.isNotEmpty) {
+      if (result != null) {
         _parseAndHandle(result, sourceApp, rawText: text);
       } else {
         debugPrint('SAFECHILD: gemini returned empty response');
       }
     } catch (e) {
-      debugPrint('SAFECHILD: gemini error — $e');
+      debugPrint('SAFECHILD: Gemini error — $e');
     }
   }
 
   void _parseAndHandle(String jsonText, String sourceApp, {required String rawText}) {
     try {
-      final cleaned = jsonText
-          .trim()
-          .replaceAll('```json', '')
-          .replaceAll('```', '')
-          .trim();
+      final cleanedJson = jsonText.replaceAll('```json', '').replaceAll('```', '').trim();
+      final map = jsonDecode(cleanedJson) as Map<String, dynamic>;
+      
+      final category = map['category'] ?? 'safe';
+      final confidence = (map['confidence'] as num?)?.toDouble() ?? 0.0;
+      final snippet = map['snippet'] ?? '';
 
-      final result     = jsonDecode(cleaned) as Map<String, dynamic>;
-      final category   = (result['category'] as String?) ?? 'safe';
-      final confidence = (result['confidence'] as num?)?.toDouble() ?? 0.0;
+      debugPrint('SAFECHILD: category=$category confidence=$confidence snippet="$snippet"');
 
-      debugPrint('SAFECHILD: category=$category confidence=$confidence');
-
-      _handleResult(category, confidence, sourceApp, 'gemini', rawText: rawText);
+      if (category == 'toxic' && confidence >= 0.65) {
+        _handleHarmful(category, confidence, sourceApp, snippet.toString().isNotEmpty ? snippet : rawText);
+      } else {
+        debugPrint('SAFECHILD: safe or low confidence — not logged');
+      }
     } catch (e) {
-      debugPrint('SAFECHILD: JSON parse error — $e — raw: $jsonText');
+      debugPrint('SAFECHILD: Parse error — $e');
     }
   }
 
-  void _handleResult(
-      String category, double confidence, String sourceApp, String model,
-      {required String rawText}) {
-    if (confidence < 0.5 || category == 'safe') {
-      debugPrint('SAFECHILD: safe or low confidence — not logged');
+  void _handleHarmful(String category, double conf, String app, String content) {
+    final lastHarmful = _lastHarmfulTime[app];
+    if (lastHarmful != null && DateTime.now().difference(lastHarmful) < _harmfulCooldown) {
       return;
     }
 
-    final summary   = _buildSummary(category, sourceApp);
-    final sendAlert = confidence >= 0.75;
-
-    debugPrint(
-        'SAFECHILD: logging incident — summary="$summary" alert=$sendAlert');
-
+    _lastHarmfulTime[app] = DateTime.now();
+    
     _logIncident(
-      summary:    summary,
-      description: rawText,
-      source:     sourceApp,
-      confidence: confidence,
-      category:   category,
-      model:      model,
-      alert:      sendAlert,
+      summary: 'Toxic content in ${_friendlyAppName(app)}',
+      description: content,
+      source: app,
+      confidence: conf,
+      category: category,
+      alert: conf >= 0.80,
     );
   }
 
-  String _buildSummary(String category, String sourceApp) {
-    final appName = _friendlyAppName(sourceApp);
-    final type    = category == 'threatening' ? 'Threatening' : 'Toxic';
-    return '$type content detected in $appName';
-  }
+  // ─────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────────────────────────────
 
-  String _friendlyAppName(String packageName) {
-    if (packageName.contains('whatsapp'))  return 'WhatsApp';
-    if (packageName.contains('chrome'))    return 'Chrome';
-    if (packageName.contains('instagram')) return 'Instagram';
-    if (packageName.contains('tiktok'))    return 'TikTok';
-    if (packageName.contains('telegram'))  return 'Telegram';
-    if (packageName.contains('youtube'))   return 'YouTube';
-    if (packageName.contains('facebook'))  return 'Facebook';
-    if (packageName.contains('twitter') ||
-        packageName.contains('x.com')) {
-      return 'X / Twitter';
-    }
-    final parts = packageName.split('.');
-    return parts.isNotEmpty
-        ? parts.last[0].toUpperCase() + parts.last.substring(1)
-        : packageName;
+  String _friendlyAppName(String pkg) {
+    if (pkg.contains('whatsapp')) return 'WhatsApp';
+    if (pkg.contains('instagram')) return 'Instagram';
+    if (pkg.contains('chrome')) return 'Chrome';
+    if (pkg.contains('tiktok')) return 'TikTok';
+    return pkg.split('.').last;
   }
 
   Future<void> _logIncident({
@@ -272,27 +289,24 @@ Text: "$text"
     required String description,
     required double confidence,
     required String category,
-    required String model,
-    required bool   alert,
+    required bool alert,
   }) async {
     if (_deviceId == null) return;
-
     try {
       await _db.collection('incidents').add({
-        'device_id':        _deviceId,
-        'text_summary':     summary,
-        'description':      description,
-        'source':           source,
+        'device_id': _deviceId,
+        'text_summary': summary,
+        'description': description,
+        'source': source,
         'confidence_score': confidence,
-        'category':         category,
-        'detection_model':  model,
-        'detected_at':      FieldValue.serverTimestamp(),
-        'is_reviewed':      false,
-        'is_alert_send':    alert,
+        'category': category,
+        'detected_at': FieldValue.serverTimestamp(),
+        'is_alert_send': alert,
+        'is_reviewed': false,
       });
-      debugPrint('SAFECHILD: incident written to Firestore ✓');
+      debugPrint('SAFECHILD: Incident logged to Firestore ✓');
     } catch (e) {
-      debugPrint('SAFECHILD: Firestore write failed — $e');
+      debugPrint('SAFECHILD: Firestore error — $e');
     }
   }
 }
