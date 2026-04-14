@@ -95,6 +95,7 @@ dependencies:
   uuid: ^4.3.3
   shared_preferences: ^2.2.3   # store role + link_id after pairing
   intl: ^0.19.0
+  http: ^1.2.0
 
   # UI
   pinput: ^3.0.1                # 6-digit pairing code input

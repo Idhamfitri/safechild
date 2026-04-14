@@ -11,6 +11,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usage_stats/usage_stats.dart';
+import 'package:flutter/foundation.dart';
 import 'native_channel_service.dart';
 
 const _kNotifChannelId   = 'safechild_monitoring';
@@ -104,27 +105,39 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
     try { batteryLevel = await Battery().batteryLevel; } catch (_) {}
 
     // ── Heartbeat  
-    await db.collection('heartbeat').doc(deviceId).set({
-      'device_id':         deviceId,
-      'last_sync':         Timestamp.fromDate(now),
-      'signal_status':     'active',
-      if (batteryLevel != null) 'battery_level': batteryLevel,
-    }, SetOptions(merge: true));
+    try {
+      await db.collection('heartbeat').doc(deviceId).set({
+        'device_id':         deviceId,
+        'last_sync':         Timestamp.fromDate(now),
+        'signal_status':     'active',
+        if (batteryLevel != null) 'battery_level': batteryLevel,
+      }, SetOptions(merge: true));
 
-    await db.collection('child_devices').doc(deviceId).set({
-      'last_seen': Timestamp.fromDate(now),
-    }, SetOptions(merge: true));
+      await db.collection('child_devices').doc(deviceId).set({
+        'last_seen': Timestamp.fromDate(now),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('BACKGROUND_SVC: Heartbeat Firestore write failed: $e');
+    }
 
     // Write today's usage stats to screen_time/{deviceId}/daily/{date}
-    await _writeUsageStats(db, deviceId, now);
+    try {
+      await _writeUsageStats(db, deviceId, now);
+    } catch (e) {
+      debugPrint('BACKGROUND_SVC: Usage stats Firestore write failed: $e');
+    }
 
     // ── Re-check permissions from background isolate ────────────
     // Note: Only usage_access and device_admin can be checked here.
     // Accessibility & overlay require main isolate (MethodChannel).
     bool? usageAccess;
     bool? deviceAdmin;
-    try { usageAccess = await UsageStats.checkUsagePermission(); } catch (_) {}
-    try { deviceAdmin = await DevicePolicyManager.isPermissionGranted(); } catch (_) {}
+    try { 
+      usageAccess = await UsageStats.checkUsagePermission(); 
+    } catch (_) {}
+    try { 
+      deviceAdmin = await DevicePolicyManager.isPermissionGranted(); 
+    } catch (_) {}
 
     if (usageAccess != null || deviceAdmin != null) {
       final updates = <String, dynamic>{};
@@ -137,12 +150,18 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
     }
 
     if (service is AndroidServiceInstance) {
-      service.setForegroundNotificationInfo(
-        title:   'SafeChild Active',
-        content: 'Last sync: ${_formatTime(now)}',
-      );
+      try {
+        await service.setForegroundNotificationInfo(
+          title:   'SafeChild Active',
+          content: 'Last sync: ${_formatTime(now)}',
+        );
+      } catch (e) {
+        debugPrint('BACKGROUND_SVC: Notification update failed: $e');
+      }
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('BACKGROUND_SVC: _sendHeartbeat generic error: $e');
+  }
 }
 
 Future<void> _writeUsageStats(

@@ -5,7 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class HeartbeatModel {
   final String    deviceId;
   final DateTime? lastSync;
-  final String    signalStatus;    // 'active' | 'lost'
+  final String    signalStatus;    
   final bool      accessibilityActive;
 
   final int?      batteryLevel;
@@ -32,9 +32,8 @@ class HeartbeatModel {
     );
   }
 
-  /// True only if last heartbeat arrived within the last 15 minutes.
+
   /// If last_sync is missing or > 15 min old, the device is considered Offline.
-  /// This correctly handles: phone off, no internet, app killed.
   bool get isOnline {
     if (lastSync == null) return false;
     return DateTime.now().difference(lastSync!).inMinutes < 15;

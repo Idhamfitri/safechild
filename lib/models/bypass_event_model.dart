@@ -42,7 +42,7 @@ extension BypassEventTypeX on BypassEventType {
     }
   }
 
-  Color get color => const Color(0xFFD32F2F); // all bypass events are red
+  Color get color => const Color(0xFFD32F2F); 
 }
 
 BypassEventType _typeFromString(String? s) {

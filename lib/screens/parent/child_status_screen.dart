@@ -1555,11 +1555,11 @@ String _appLabel(String? n) {
   return n.length > 8 ? '${n.substring(0, 7)}…' : n;
 }
 String _friendlyDeviceName(String manufacturer, String model) {
-  if (manufacturer.isEmpty) return 'Unknown Smartphone';
+  if (manufacturer.isEmpty) return 'Unknown Device';
   
   // Format the manufacturer name (e.g. "xiaomi" -> "Xiaomi")
   final cleanName = manufacturer[0].toUpperCase() + manufacturer.substring(1).toLowerCase();
-  return '$cleanName Smartphone';
+  return cleanName;
 }
 
 // ── Recently Used Apps Section ────────────────────────────────────────────

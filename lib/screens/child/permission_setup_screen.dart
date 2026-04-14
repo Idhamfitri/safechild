@@ -40,32 +40,32 @@ enum _StepStatus { idle, granted, denied, skipped }
 const _steps = [
   _PermStep(
     icon: Icons.notifications_active_outlined, title: 'Notifications',
-    subtitle: 'Module 4 — Alert System',
+    subtitle: 'Alert System',
     reason: 'Allows SafeChild to send real-time safety alerts to this device.',
     type: _PermType.notification, firestoreKey: 'notifications',
   ),
   _PermStep(
     icon: Icons.layers_outlined, title: 'Display Over Other Apps',
-    subtitle: 'Module 3 — Anti-Bypass',
+    subtitle: 'Anti-Bypass',
     reason: 'Allows SafeChild to show intervention screens over other apps.',
     type: _PermType.systemAlertWindow, firestoreKey: 'overlay',
   ),
   _PermStep(
     icon: Icons.bar_chart_outlined, title: 'Usage Access',
-    subtitle: 'Module 3 — App Monitoring',
+    subtitle: 'App Monitoring',
     reason: 'Allows SafeChild to track app usage and screen time.',
     type: _PermType.usageAccess, firestoreKey: 'usage_access',
   ),
   _PermStep(
     icon: Icons.accessibility_new_outlined, title: 'Accessibility Service',
-    subtitle: 'Modules 2 & 3 — Content Detection',
+    subtitle: 'Content Detection',
     reason: 'Allows SafeChild to read on-screen text for AI content analysis.',
     type: _PermType.accessibility, firestoreKey: 'accessibility',
   ),
   _PermStep(
     icon: Icons.admin_panel_settings_outlined,
     title: 'Device Administrator',
-    subtitle: 'Module 4 — Anti-Bypass',
+    subtitle: 'Anti-Bypass',
     reason: 'Prevents SafeChild from being uninstalled without parent approval. '
         'This is required for full child protection.',
     type: _PermType.deviceAdmin,

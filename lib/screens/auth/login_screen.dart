@@ -9,6 +9,7 @@ import 'register_screen.dart';
 import '../parent/dashboard_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../admin/admin_screen.dart';
+import '../../services/admin_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -30,12 +31,25 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
     try {
-      await _authService.loginParent(
+      final cred = await _authService.loginParent(
           email: _emailCtrl.text, password: _passCtrl.text);
-      // Store role locally
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('role', 'parent');
 
+      final prefs = await SharedPreferences.getInstance();
+
+      // ── Admin short-circuit ────────────────────────────────────────────────
+      if (AdminService.isAdminEmail(cred.user?.email)) {
+        await prefs.setString('role', 'admin');
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const AdminScreen()),
+              (_) => false);
+        }
+        return;
+      }
+
+      // ── Normal parent ─────────────────────────────────────────────────────
+      await prefs.setString('role', 'parent');
       if (mounted) {
         Navigator.pushAndRemoveUntil(
             context,

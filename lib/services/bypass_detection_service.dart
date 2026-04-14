@@ -48,6 +48,11 @@ class BypassDetectionService {
   static const _logCooldown       = Duration(minutes: 1);
 
   Future<void> start() async {
+    if (_subscription != null) {
+      debugPrint('BYPASS: already running, ignoring start request');
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     _deviceId   = prefs.getString('device_id');
 

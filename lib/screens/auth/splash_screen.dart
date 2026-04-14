@@ -10,6 +10,7 @@ import 'login_screen.dart';
 import 'register_screen.dart';
 import '../parent/dashboard_screen.dart';
 import '../child/child_active_screen.dart';
+import '../admin/admin_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -39,6 +40,12 @@ class _SplashScreenState extends State<SplashScreen>
     final prefs  = await SharedPreferences.getInstance();
     final role   = prefs.getString('role');
     final linkId = prefs.getString('link_id');
+
+    // ── Admin role ─────────────────────────────────────────────────────────
+    if (role == 'admin' && FirebaseAuth.instance.currentUser != null) {
+      _go(const AdminScreen());
+      return;
+    }
 
     // ── Parent role ────────────────────────────────────────────────────────
     if (role == 'parent' && FirebaseAuth.instance.currentUser != null) {

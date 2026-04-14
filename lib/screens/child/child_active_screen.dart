@@ -15,6 +15,7 @@ import 'package:pinput/pinput.dart';
 import '../../services/pairing_service.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:device_policy_manager/device_policy_manager.dart';
+import 'permission_setup_screen.dart';
 
 class ChildActiveScreen extends StatefulWidget {
   const ChildActiveScreen({super.key});
@@ -25,6 +26,7 @@ class ChildActiveScreen extends StatefulWidget {
 
 class _ChildActiveScreenState extends State<ChildActiveScreen> {
   StreamSubscription<QuerySnapshot>? _linkSub;
+  StreamSubscription<DocumentSnapshot>? _deviceSub;
   bool    _unlinking = false;
   String? _deviceId;
   String? _linkId;
@@ -105,6 +107,58 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
         _forceLogout();
       }
     }, onError: (_) {});
+
+    // Listen for Remote Settings
+    _deviceSub = FirebaseFirestore.instance
+        .collection('child_devices')
+        .doc(_deviceId)
+        .snapshots()
+        .listen((snap) async {
+      if (!mounted || !snap.exists) return;
+      final data = snap.data() ?? {};
+      final settings = data['settings'] as Map<String, dynamic>? ?? {};
+
+      // Bypass
+      final bypassEnabled = settings['bypass_enabled'] ?? true;
+      if (bypassEnabled) {
+        await _bypassService.start();
+      } else {
+        await _bypassService.stop();
+      }
+
+      // Content Detection
+      final contentEnabled = settings['content_enabled'] ?? true;
+      if (contentEnabled) {
+        await _detectionService.start();
+      } else {
+        await _detectionService.stop();
+      }
+
+      // Device Admin
+      final adminEnabled = settings['admin_enabled'] ?? true;
+      if (!adminEnabled) {
+        try { DevicePolicyManager.removeActiveAdmin(); } catch (_) {}
+      }
+
+      // Trigger Permission Setup
+      final triggerSetup = settings['trigger_setup'] ?? false;
+      if (triggerSetup) {
+        // Clear flag immediately so it doesn't loop
+        try {
+          await FirebaseFirestore.instance
+              .collection('child_devices')
+              .doc(_deviceId)
+              .update({'settings.trigger_setup': false});
+        } catch (_) {}
+
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => PermissionSetupScreen()),
+              (_) => false);
+        }
+      }
+    }, onError: (_) {});
   }
 
   // ── Write real permissions from main isolate to child_devices ─────────────
@@ -142,6 +196,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
     _bypassService.stop();
     BackgroundServiceManager.stop();
     _linkSub?.cancel();
+    _deviceSub?.cancel();
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('role');
@@ -331,6 +386,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
     _detectionService.stop();
     _bypassService.stop();
     _linkSub?.cancel();
+    _deviceSub?.cancel();
 
     super.dispose();
   }

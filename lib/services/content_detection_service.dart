@@ -20,6 +20,11 @@ class ContentDetectionService {
 
 
   Future<void> start() async {
+    if (_accessibilitySubscription != null) {
+      debugPrint('SAFECHILD: detection already running, ignoring start request');
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     _deviceId   = prefs.getString('device_id');
 
