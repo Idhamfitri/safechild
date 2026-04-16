@@ -10,6 +10,7 @@ import '../../services/bypass_event_service.dart';
 import '../../services/heartbeat_service.dart';
 import '../../services/incident_service.dart';
 import '../../utils/app_theme.dart';
+import 'screen_time_mgmt_screen.dart';
 
 class ChildStatusScreen extends StatefulWidget {
   final String deviceId;
@@ -64,9 +65,14 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         type: BottomNavigationBarType.fixed,
         items: const [
           BottomNavigationBarItem(
-            icon:       Icon(Icons.monitor_heart_outlined),
-            activeIcon: Icon(Icons.monitor_heart),
-            label:      'Overview',
+            icon:       Icon(Icons.dashboard_outlined),
+            activeIcon: Icon(Icons.dashboard),
+            label:      'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon:       Icon(Icons.lock_clock_outlined),
+            activeIcon: Icon(Icons.lock_clock),
+            label:      'Lock',
           ),
           BottomNavigationBarItem(
             icon:       Icon(Icons.notifications_outlined),
@@ -84,6 +90,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
         index: _currentTab,
         children: [
           _buildOverviewTab(),
+          ScreenTimeMgmtScreen(deviceId: widget.deviceId, deviceName: widget.deviceName),
           _buildAlertsTab(),
           _buildSettingsTab(),
         ],
@@ -116,6 +123,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
                 _ScreenTimeSection(
                   deviceId: widget.deviceId,
                   tabCtrl:  _screenTimeTab,
+                  onManageTap: () => setState(() => _currentTab = 1),
                 ),
                 
                 const SizedBox(height: 14),
@@ -1247,10 +1255,12 @@ class _PermissionCard extends StatelessWidget {
 class _ScreenTimeSection extends StatefulWidget {
   final String        deviceId;
   final TabController tabCtrl;
+  final VoidCallback  onManageTap;
 
   const _ScreenTimeSection({
     required this.deviceId,
     required this.tabCtrl,
+    required this.onManageTap,
   });
 
   @override
@@ -1286,8 +1296,18 @@ class _ScreenTimeSectionState extends State<_ScreenTimeSection> {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          _SectionTitle(
-              icon: Icons.access_time_outlined, title: 'Screen Time Usage'),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _SectionTitle(
+                  icon: Icons.access_time_outlined, title: 'Screen Time Usage'),
+              TextButton.icon(
+                icon: const Icon(Icons.settings, size: 16),
+                label: const Text('Manage'),
+                onPressed: widget.onManageTap,
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           Container(
             height: 36,

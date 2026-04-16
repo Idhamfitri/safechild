@@ -16,10 +16,11 @@ class _AlertEntry {
   final Color     color;
   final DateTime  timestamp;
   final bool      isRead;
-  final bool      isBlocked;
   final bool      isFalsePositive;
+  final bool      isResolved;
   final double?   confidenceScore;
   final _AlertKind kind;
+  final bool      isBlocked;     // bypass only
 
   const _AlertEntry({
     required this.id,
@@ -32,6 +33,7 @@ class _AlertEntry {
     required this.isRead,
     required this.isBlocked,
     required this.isFalsePositive,
+    required this.isResolved,
     this.confidenceScore,
     required this.kind,
   });
@@ -78,6 +80,12 @@ class _NotificationAlertScreenState
     }
   }
 
+  Future<void> _markResolved(_AlertEntry entry) async {
+    if (entry.kind == _AlertKind.incident) {
+      await _incidentService.markResolved(entry.id);
+    }
+  }
+
   Future<void> _markAllRead(List<_AlertEntry> entries) async {
     for (final e in entries.where((e) => !e.isRead)) {
       await _markRead(e);
@@ -110,6 +118,7 @@ class _NotificationAlertScreenState
           isRead:      b.isReviewed,
           isBlocked:   b.isBlocked,
           isFalsePositive: false,
+          isResolved:      false,
           kind:        _AlertKind.bypass,
         ));
       }
@@ -129,6 +138,7 @@ class _NotificationAlertScreenState
           isRead:          i.isReviewed,
           isBlocked:       false,
           isFalsePositive: i.isFalsePositive,
+          isResolved:      i.isResolved,
           confidenceScore: i.confidenceScore,
           kind:            _AlertKind.incident,
         ));
@@ -281,6 +291,7 @@ class _NotificationAlertScreenState
               entry:               e,
               onMarkRead:          () => _markRead(e),
               onMarkFalsePositive: () => _markFalsePositive(e),
+              onMarkResolved:      () => _markResolved(e),
             )),
       ],
     );
@@ -361,8 +372,14 @@ class _AlertTile extends StatelessWidget {
   final _AlertEntry  entry;
   final VoidCallback onMarkRead;
   final VoidCallback onMarkFalsePositive;
+  final VoidCallback onMarkResolved;
 
-  const _AlertTile({required this.entry, required this.onMarkRead, required this.onMarkFalsePositive});
+  const _AlertTile({
+    required this.entry,
+    required this.onMarkRead,
+    required this.onMarkFalsePositive,
+    required this.onMarkResolved,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -506,14 +523,16 @@ class _AlertTile extends StatelessWidget {
 
                   // False Positive badge
                   if (entry.isFalsePositive)
-                    _badge('False Positive', AppColors.textSub),
+                    _badge('AI Mistake', AppColors.textSub),
+                  if (entry.isResolved)
+                    _badge('Resolved', AppColors.textSub),
 
                   const Spacer(),
 
                   if (!entry.isRead && entry.kind == _AlertKind.incident) ...[
                     GestureDetector(
                       onTap: onMarkFalsePositive,
-                      child: const Text('False Positive',
+                      child: const Text('Mark as Safe',
                           style: TextStyle(
                               fontSize: 11,
                               color: AppColors.textSub,
@@ -521,9 +540,16 @@ class _AlertTile extends StatelessWidget {
                               decoration: TextDecoration.underline)),
                     ),
                     const SizedBox(width: 12),
-                  ],
-
-                  if (!entry.isRead)
+                    GestureDetector(
+                      onTap: onMarkResolved,
+                      child: const Text('Resolve',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
+                              decoration: TextDecoration.underline)),
+                    ),
+                  ] else if (!entry.isRead) ...[
                     GestureDetector(
                       onTap: onMarkRead,
                       child: const Text('Mark read',

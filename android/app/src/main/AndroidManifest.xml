@@ -44,6 +44,7 @@ xmlns:tools="http://schemas.android.com/tools">
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true"
+        android:enableOnBackInvokedCallback="true"
         tools:replace="android:label">
         
         <activity

@@ -42,6 +42,12 @@ class IncidentService {
         'reviewed_at': FieldValue.serverTimestamp(),
       });
 
+  Future<void> markResolved(String incidentId) => _col.doc(incidentId).update({
+        'is_resolved': true,
+        'is_reviewed': true,
+        'reviewed_at': FieldValue.serverTimestamp(),
+      });
+
   Future<void> markFalsePositive(String incidentId) => _col.doc(incidentId).update({
         'is_false_positive': true,
         'is_reviewed': true,

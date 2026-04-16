@@ -13,6 +13,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:flutter/foundation.dart';
 import 'native_channel_service.dart';
+import '../models/screen_time_models.dart';
+import 'package:flutter/material.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 
 const _kNotifChannelId   = 'safechild_monitoring';
 const _kNotifChannelName = 'SafeChild Monitoring';
@@ -82,6 +86,18 @@ Future<void> onStart(ServiceInstance service) async {
 
 
   await _sendHeartbeat(service);
+
+  // Screen Time Lock Enforcement
+  final prefs = await SharedPreferences.getInstance();
+  final deviceId = prefs.getString('device_id');
+  
+  if (deviceId != null) {
+    Timer.periodic(const Duration(seconds: 45), (_) async {
+      await _checkScreenTimeLock(deviceId);
+    });
+    // Initial check
+    await _checkScreenTimeLock(deviceId);
+  }
 
   // Then every 10 minutes
   Timer.periodic(const Duration(minutes: 10), (_) async {
@@ -193,6 +209,86 @@ Future<void> _writeUsageStats(
     });
   } catch (_) {}
 }
+
+Future<void> _checkScreenTimeLock(String deviceId) async {
+  try {
+    final db = FirebaseFirestore.instance;
+    
+    // 1. Get current lock state
+    final lockDoc = await db.collection('screen_time_locks').doc(deviceId).get();
+    final lock = lockDoc.exists 
+        ? ScreenTimeLock.fromFirestore(lockDoc)
+        : ScreenTimeLock(lockId: deviceId, deviceId: deviceId, isLocked: false);
+        
+    // 2. Get active schedules
+    final schedDocs = await db.collection('screen_time_schedules')
+        .where('device_id', isEqualTo: deviceId)
+        .where('is_active', isEqualTo: true)
+        .get();
+        
+    final schedules = schedDocs.docs.map(ScreenTimeSchedule.fromFirestore).toList();
+    
+    final now = DateTime.now();
+    final timeOfDay = TimeOfDay(hour: now.hour, minute: now.minute);
+    final weekday = now.weekday;
+    
+    bool shouldBeLockedBySchedule = false;
+    for (var s in schedules) {
+      if (s.contains(timeOfDay, weekday)) {
+        shouldBeLockedBySchedule = true;
+        break;
+      }
+    }
+    
+    // If we have an active "snooze" period (approved time extension), it overrides the schedule lock temporarily
+    if (shouldBeLockedBySchedule && lock.endTime != null && lock.endTime!.isAfter(now)) {
+      shouldBeLockedBySchedule = false;
+    }
+    
+    // Evaluate transitions
+    if (lock.isLocked && lock.lockedBy == 'parent') {
+      // Parent lock supersedes everything. Do not unlock it automatically.
+      _bringAppToForeground();
+      return;
+    }
+    
+    if (shouldBeLockedBySchedule && (!lock.isLocked || lock.lockedBy != 'schedule')) {
+      // Transition to Schedule Lock
+      await db.collection('screen_time_locks').doc(deviceId).set({
+        'device_id': deviceId,
+        'is_locked': true,
+        'locked_by': 'schedule',
+        'start_time': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      // Even though we just set it, bring it to front now (or next tick will get it)
+      _bringAppToForeground();
+    } else if (!shouldBeLockedBySchedule && lock.isLocked && lock.lockedBy == 'schedule') {
+      // Transition to Unlock
+      await db.collection('screen_time_locks').doc(deviceId).set({
+         'is_locked': false,
+      }, SetOptions(merge: true));
+    } else if (lock.isLocked) {
+      // If it's already correctly locked, just annoy them by bringing to foreground.
+      _bringAppToForeground();
+    }
+
+  } catch (e) {
+    debugPrint('BACKGROUND_SVC: ScreenTime error = $e');
+  }
+}
+
+void _bringAppToForeground() async {
+  try {
+     const intent = AndroidIntent(
+        action: 'android.intent.action.MAIN',
+        package: 'com.safechild.safechild',
+        componentName: 'com.safechild.safechild.MainActivity',
+        flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
+      );
+      await intent.launch();
+  } catch (_) {}
+}
+
 
 String _formatTime(DateTime dt) {
   final h = dt.hour.toString().padLeft(2, '0');

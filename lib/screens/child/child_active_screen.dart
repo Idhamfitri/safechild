@@ -16,6 +16,8 @@ import '../../services/pairing_service.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:device_policy_manager/device_policy_manager.dart';
 import 'permission_setup_screen.dart';
+import '../../models/screen_time_models.dart';
+import 'device_lock_screen.dart';
 
 class ChildActiveScreen extends StatefulWidget {
   const ChildActiveScreen({super.key});
@@ -27,9 +29,14 @@ class ChildActiveScreen extends StatefulWidget {
 class _ChildActiveScreenState extends State<ChildActiveScreen> {
   StreamSubscription<QuerySnapshot>? _linkSub;
   StreamSubscription<DocumentSnapshot>? _deviceSub;
+  StreamSubscription<DocumentSnapshot>? _screenTimeSub;
   bool    _unlinking = false;
   String? _deviceId;
   String? _linkId;
+  
+  bool _isLocked = false;
+  String _lockReason = 'Device Locked';
+  String? _lockedBy;
 
   final _detectionService = ContentDetectionService();
   final _bypassService    = BypassDetectionService();
@@ -159,6 +166,30 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
         }
       }
     }, onError: (_) {});
+    
+    // Listen for Screen Time Configuration Lock State
+    _screenTimeSub = FirebaseFirestore.instance
+        .collection('screen_time_locks')
+        .doc(_deviceId)
+        .snapshots()
+        .listen((snap) {
+       if (!mounted || !snap.exists) return;
+       final lock = ScreenTimeLock.fromFirestore(snap);
+       final now = DateTime.now();
+       
+       bool isLocked = lock.isLocked;
+       
+       // Handle schedule snooze (end_time in the future unlocks it temporarily)
+       if (isLocked && lock.endTime != null && lock.endTime!.isAfter(now)) {
+         isLocked = false;
+       }
+       
+       setState(() {
+         _isLocked = isLocked;
+         _lockedBy = lock.lockedBy;
+         _lockReason = lock.lockedBy == 'parent' ? 'Locked by Parent' : 'Locked by Schedule';
+       });
+    }, onError: (_) {});
   }
 
   // ── Write real permissions from main isolate to child_devices ─────────────
@@ -197,6 +228,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
     BackgroundServiceManager.stop();
     _linkSub?.cancel();
     _deviceSub?.cancel();
+    _screenTimeSub?.cancel();
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('role');
@@ -387,12 +419,17 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
     _bypassService.stop();
     _linkSub?.cancel();
     _deviceSub?.cancel();
+    _screenTimeSub?.cancel();
 
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isLocked) {
+       return DeviceLockScreen(lockReason: _lockReason, lockedBy: _lockedBy);
+    }
+  
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(

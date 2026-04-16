@@ -92,6 +92,7 @@ class IncidentModel {
   final bool             isReviewed;
   final DateTime?        reviewedAt;
   final bool             isFalsePositive; // Added for false positive review
+  final bool             isResolved;      // True if handled/acknowledged by parent
   final bool             isAlertSend;
   final DateTime?        alertSendAt;
 
@@ -108,6 +109,7 @@ class IncidentModel {
     required this.isReviewed,
     this.reviewedAt,
     this.isFalsePositive = false, // default false
+    this.isResolved      = false,
     required this.isAlertSend,
     this.alertSendAt,
   });
@@ -130,6 +132,7 @@ class IncidentModel {
           ? (d['reviewed_at'] as Timestamp).toDate()
           : null,
       isFalsePositive: d['is_false_positive']  ?? false,
+      isResolved:      d['is_resolved']       ?? false,
       isAlertSend: d['is_alert_send'] ?? false,
       alertSendAt: d['alert_send_at'] != null
           ? (d['alert_send_at'] as Timestamp).toDate()
@@ -149,6 +152,7 @@ class IncidentModel {
         'is_reviewed':      isReviewed,
         if (reviewedAt != null) 'reviewed_at': Timestamp.fromDate(reviewedAt!),
         'is_false_positive': isFalsePositive,
+        'is_resolved':       isResolved,
         'is_alert_send':    isAlertSend,
         if (alertSendAt != null) 'alert_send_at': Timestamp.fromDate(alertSendAt!),
       };
