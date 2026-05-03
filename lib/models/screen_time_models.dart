@@ -6,6 +6,7 @@ class ScreenTimeSchedule {
   final String scheduleId;
   final String deviceId;
   final String scheduleName;
+  final int iconIndex; // To store symbolic icon index (e.g., 0=Lock, 1=Book, 2=School)
   final String startTime; // e.g. "20:00"
   final String endTime;   // e.g. "22:00"
   final List<int> days;   // 1=Mon, 7=Sun
@@ -16,6 +17,7 @@ class ScreenTimeSchedule {
     required this.scheduleId,
     required this.deviceId,
     required this.scheduleName,
+    required this.iconIndex,
     required this.startTime,
     required this.endTime,
     required this.days,
@@ -29,6 +31,7 @@ class ScreenTimeSchedule {
       scheduleId:   doc.id,
       deviceId:     d['device_id'] ?? '',
       scheduleName: d['schedule_name'] ?? 'Lock Block',
+      iconIndex:    d['icon_index'] ?? 0,
       startTime:    d['start_time'] ?? '00:00',
       endTime:      d['end_time'] ?? '00:00',
       days:         List<int>.from(d['days'] ?? []),
@@ -40,6 +43,7 @@ class ScreenTimeSchedule {
   Map<String, dynamic> toFirestore() => {
         'device_id':     deviceId,
         'schedule_name': scheduleName,
+        'icon_index':    iconIndex,
         'start_time':    startTime,
         'end_time':      endTime,
         'days':          days,

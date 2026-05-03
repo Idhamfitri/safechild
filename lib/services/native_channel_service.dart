@@ -59,17 +59,20 @@ class NativeChannelService {
 class AppUsageStat {
   final String packageName;
   final String appName;
+  final String iconBase64;
   final Duration usageTime;
 
   AppUsageStat({
     required this.packageName,
     required this.appName,
+    required this.iconBase64,
     required this.usageTime,
   });
 
   factory AppUsageStat.fromMap(Map<String, dynamic> map) => AppUsageStat(
         packageName: map['packageName'] as String? ?? '',
         appName:     map['appName']     as String? ?? map['packageName'] as String? ?? '',
+        iconBase64:  map['iconBase64']  as String? ?? '',
         usageTime:   Duration(
             milliseconds: (map['usageMs'] as num?)?.toInt() ?? 0),
       );

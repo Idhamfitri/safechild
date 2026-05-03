@@ -1,6 +1,7 @@
 // lib/services/background_service.dart
 // Owns ALL heartbeat logic. Survives app kill, cache clear, and reboots.
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -15,6 +16,10 @@ import 'package:flutter/foundation.dart';
 import 'native_channel_service.dart';
 import '../models/screen_time_models.dart';
 import 'package:flutter/material.dart';
+import 'package:safechild/models/screen_time_models.dart';
+import 'package:safechild/services/native_channel_service.dart';
+import 'package:installed_apps/installed_apps.dart';
+import 'package:installed_apps/app_info.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 
@@ -92,7 +97,7 @@ Future<void> onStart(ServiceInstance service) async {
   final deviceId = prefs.getString('device_id');
   
   if (deviceId != null) {
-    Timer.periodic(const Duration(seconds: 45), (_) async {
+    Timer.periodic(const Duration(seconds: 10), (_) async {
       await _checkScreenTimeLock(deviceId);
     });
     // Initial check
@@ -183,31 +188,161 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
 Future<void> _writeUsageStats(
     FirebaseFirestore db, String deviceId, DateTime now) async {
   try {
-    final stats = await NativeChannelService.getTodayUsageStats();
-    if (stats.isEmpty) return;
+    // ── Check permission first using usage_stats package ─────────────────
+    // This works in background isolate unlike MethodChannel
+    final hasPermission = await UsageStats.checkUsagePermission() ?? false;
+    if (!hasPermission) {
+      debugPrint('BACKGROUND_SVC: usage access not granted — skipping stats');
+      return;
+    }
+
+    // ── Query today's usage directly via usage_stats package ─────────────
+    final startOfDay = DateTime(now.year, now.month, now.day);
+    final rawStats   = await UsageStats.queryUsageStats(startOfDay, now);
+
+    if (rawStats == null || rawStats.isEmpty) {
+      debugPrint('BACKGROUND_SVC: no usage stats returned');
+      return;
+    }
+
+    // ── Filter and map to app usage list ──────────────────────────────────
+    final List<Map<String, dynamic>> apps = [];
+    for (var s in rawStats) {
+      if (s.packageName != null &&
+          s.totalTimeInForeground != null &&
+          int.tryParse(s.totalTimeInForeground ?? '0') != null &&
+          int.parse(s.totalTimeInForeground!) > 60000) {
+        
+        final usageMs      = int.parse(s.totalTimeInForeground!);
+        final usageMinutes = (usageMs / 60000).round();
+        final packageName  = s.packageName!;
+        final appName      = _friendlyAppName(packageName);
+
+        // Fetch icon memory
+        String iconBase64 = '';
+        try {
+           final appInfo = await InstalledApps.getAppInfo(packageName);
+           if (appInfo != null && appInfo.icon != null) {
+             iconBase64 = base64Encode(appInfo.icon!);
+           }
+        } catch (_) {}
+
+        apps.add({
+          'package_name':  packageName,
+          'app_name':      appName,
+          'icon_base64':   iconBase64,
+          'usage_minutes': usageMinutes,
+          'usage_ms':      usageMs,
+        });
+      }
+    }
+
+    apps.sort((a, b) => (b['usage_ms'] as int).compareTo(a['usage_ms'] as int));
+
+    if (apps.isEmpty) {
+      debugPrint('BACKGROUND_SVC: no apps with usage > 1 min');
+      return;
+    }
+
+    // ── Take top 10 most used apps ────────────────────────────────────────
+    final topApps      = apps.take(10).toList();
+    final totalMinutes = topApps.fold<int>(
+        0, (sum, a) => sum + (a['usage_minutes'] as int));
+
+    // ── Group unimportant apps into "Other" ───────────────────────────────
+    final importantApps = ['WhatsApp', 'Chrome', 'Instagram', 'TikTok', 'Telegram', 'YouTube', 'Facebook', 'X / Twitter', 'Snapchat', 'Netflix', 'Spotify'];
+    final filteredApps = <Map<String, dynamic>>[];
+    int totalOtherMinutes = 0;
+
+    for (var a in topApps) {
+      if (importantApps.contains(a['app_name'])) {
+        filteredApps.add(a);
+      } else {
+        totalOtherMinutes += (a['usage_minutes'] as int);
+      }
+    }
+
+    if (totalOtherMinutes > 0) {
+      filteredApps.add({
+        'package_name': 'com.other.apps',
+        'app_name': 'Other',
+        'icon_base64': '',
+        'usage_minutes': totalOtherMinutes,
+      });
+    }
 
     final dateKey = DateFormat('yyyy-MM-dd').format(now);
-    final docRef  = db
-        .collection('screen_time')
-        .doc(deviceId)
-        .collection('daily')
-        .doc(dateKey);
+    final docRef = db.collection('screen_time').doc(deviceId).collection('daily').doc(dateKey);
 
-    final totalMinutes =
-        stats.fold<int>(0, (sum, s) => sum + s.usageMinutes);
+    // ── Hourly Delta Tracking ─────────────────────────────────────────────
+    List<int> hourlyTotals = List.filled(24, 0);
+    int previousTotal = 0;
 
+    try {
+      final docSnap = await docRef.get();
+      if (docSnap.exists) {
+        final data = docSnap.data()!;
+        previousTotal = (data['total_minutes'] as num?)?.toInt() ?? 0;
+        final existingHourly = (data['hourly_totals'] as List<dynamic>? ?? []).cast<int>();
+        if (existingHourly.length == 24) {
+          hourlyTotals = List<int>.from(existingHourly);
+        }
+      }
+    } catch (_) {}
+
+    final deltaMinutes = totalMinutes - previousTotal;
+    if (deltaMinutes > 0) {
+      hourlyTotals[now.hour] += deltaMinutes;
+    }
+
+    // ── Write to screen_time/{deviceId}/daily/{date} ──────────────────────
     await docRef.set({
       'device_id':     deviceId,
       'date':          dateKey,
       'total_minutes': totalMinutes,
       'updated_at':    Timestamp.fromDate(now),
-      'apps': stats.map((s) => {
-            'package_name':  s.packageName,
-            'app_name':      s.appName,
-            'usage_minutes': s.usageMinutes,
-          }).toList(),
+      'hourly_totals': hourlyTotals,
+      'apps':          filteredApps,
     });
-  } catch (_) {}
+
+    // ── Also write most recent app separately for quick access ────────────
+    if (topApps.isNotEmpty) {
+      await db.collection('child_devices').doc(deviceId).set({
+        'recent_apps': topApps.take(5).map((a) => {
+              'package_name':  a['package_name'],
+              'app_name':      a['app_name'],
+              'icon_base64':   a['icon_base64'],
+              'usage_minutes': a['usage_minutes'],
+            }).toList(),
+        'recent_apps_updated_at': Timestamp.fromDate(now),
+      }, SetOptions(merge: true));
+    }
+
+    debugPrint('BACKGROUND_SVC: usage stats written — $totalMinutes min total, ${topApps.length} apps ✓');
+  } catch (e) {
+    debugPrint('BACKGROUND_SVC: _writeUsageStats error — $e');
+  }
+}
+
+// ── Friendly app name helper ──────────────────────────────────────────────
+String _friendlyAppName(String packageName) {
+  if (packageName.contains('whatsapp'))  return 'WhatsApp';
+  if (packageName.contains('chrome'))    return 'Chrome';
+  if (packageName.contains('instagram')) return 'Instagram';
+  if (packageName.contains('tiktok'))    return 'TikTok';
+  if (packageName.contains('telegram'))  return 'Telegram';
+  if (packageName.contains('youtube'))   return 'YouTube';
+  if (packageName.contains('facebook'))  return 'Facebook';
+  if (packageName.contains('twitter') ||
+      packageName.contains('x.com'))     return 'X / Twitter';
+  if (packageName.contains('tiktok'))    return 'TikTok';
+  if (packageName.contains('snapchat'))  return 'Snapchat';
+  if (packageName.contains('netflix'))   return 'Netflix';
+  if (packageName.contains('spotify'))   return 'Spotify';
+  final parts = packageName.split('.');
+  return parts.isNotEmpty
+      ? parts.last[0].toUpperCase() + parts.last.substring(1)
+      : packageName;
 }
 
 Future<void> _checkScreenTimeLock(String deviceId) async {
@@ -248,7 +383,7 @@ Future<void> _checkScreenTimeLock(String deviceId) async {
     // Evaluate transitions
     if (lock.isLocked && lock.lockedBy == 'parent') {
       // Parent lock supersedes everything. Do not unlock it automatically.
-      _bringAppToForeground();
+      _bringAppToForeground(hardwareLock: true);
       return;
     }
     
@@ -260,8 +395,8 @@ Future<void> _checkScreenTimeLock(String deviceId) async {
         'locked_by': 'schedule',
         'start_time': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      // Even though we just set it, bring it to front now (or next tick will get it)
-      _bringAppToForeground();
+      // First time catching them with schedule -> hardware lock
+      _bringAppToForeground(hardwareLock: true);
     } else if (!shouldBeLockedBySchedule && lock.isLocked && lock.lockedBy == 'schedule') {
       // Transition to Unlock
       await db.collection('screen_time_locks').doc(deviceId).set({
@@ -269,7 +404,8 @@ Future<void> _checkScreenTimeLock(String deviceId) async {
       }, SetOptions(merge: true));
     } else if (lock.isLocked) {
       // If it's already correctly locked, just annoy them by bringing to foreground.
-      _bringAppToForeground();
+      // Don't physically shut down the screen again, otherwise they can't even tap Request More Time.
+      _bringAppToForeground(hardwareLock: false);
     }
 
   } catch (e) {
@@ -277,8 +413,15 @@ Future<void> _checkScreenTimeLock(String deviceId) async {
   }
 }
 
-void _bringAppToForeground() async {
+void _bringAppToForeground({bool hardwareLock = false}) async {
   try {
+     if (hardwareLock) {
+         // Brutally turns off the OS screen requiring PIN/Pattern to wake
+         await DevicePolicyManager.lockNow();
+         // Give OS 500ms to settle off before we spawn the foreground intent
+         await Future.delayed(const Duration(milliseconds: 500));
+     }
+
      const intent = AndroidIntent(
         action: 'android.intent.action.MAIN',
         package: 'com.safechild.safechild',

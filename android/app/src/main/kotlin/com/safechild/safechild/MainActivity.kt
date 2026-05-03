@@ -11,6 +11,12 @@ import android.app.usage.UsageStatsManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
+import android.util.Base64
+import java.io.ByteArrayOutputStream
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.safechild/native_helper"
@@ -71,20 +77,46 @@ class MainActivity : FlutterActivity() {
 
         for ((packageName, usageStat) in stats) {
             if (usageStat.totalTimeInForeground > 0) {
-                val appName = try {
+                var appName = packageName
+                var iconBase64 = ""
+                try {
                     val info = packageManager.getApplicationInfo(packageName, 0)
-                    packageManager.getApplicationLabel(info).toString()
+                    appName = packageManager.getApplicationLabel(info).toString()
+                    
+                    val drawable = packageManager.getApplicationIcon(info)
+                    iconBase64 = encodeDrawableToBase64(drawable)
                 } catch (e: Exception) {
-                    packageName
+                    // Ignore missing info
                 }
 
                 result.add(mapOf(
                     "packageName" to packageName,
                     "appName" to appName,
+                    "iconBase64" to iconBase64,
                     "usageMs" to usageStat.totalTimeInForeground
                 ))
             }
         }
         return result
+    }
+
+    private fun encodeDrawableToBase64(drawable: Drawable): String {
+        val bitmap = if (drawable is BitmapDrawable) {
+            drawable.bitmap
+        } else {
+            // Compress non-bitmap drawables into small 48x48 thumbnails
+            val bmp = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bmp)
+            drawable.setBounds(0, 0, canvas.width, canvas.height)
+            drawable.draw(canvas)
+            bmp
+        }
+
+        // Scale bitmap to avoid massive firestore documents
+        val scaledBitmap = Bitmap.createScaledBitmap(bitmap, 48, 48, true)
+        val outputStream = ByteArrayOutputStream()
+        scaledBitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
+        val byteArray = outputStream.toByteArray()
+        return Base64.encodeToString(byteArray, Base64.NO_WRAP)
     }
 }

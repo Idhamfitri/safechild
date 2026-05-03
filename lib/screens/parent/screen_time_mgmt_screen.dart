@@ -23,64 +23,25 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Nested inside another Scaffold, we should avoid duplicate appbars.
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildLockToggle(),
-            const SizedBox(height: 24),
-            _buildPendingRequests(),
-            const SizedBox(height: 24),
-            _buildSchedules(),
-          ],
-        ),
-      ),
-    );
-  }
+      body: StreamBuilder<ScreenTimeLock>(
+        stream: _service.watchLock(widget.deviceId),
+        builder: (context, snapshot) {
+          final lock = snapshot.data ?? ScreenTimeLock(
+            lockId: widget.deviceId, 
+            deviceId: widget.deviceId, 
+            isLocked: false
+          );
 
-  Widget _buildLockToggle() {
-    return StreamBuilder<ScreenTimeLock>(
-      stream: _service.watchLock(widget.deviceId),
-      builder: (context, snapshot) {
-        final lock = snapshot.data ?? ScreenTimeLock(
-          lockId: widget.deviceId, 
-          deviceId: widget.deviceId, 
-          isLocked: false
-        );
-        
-        final isLocked = lock.isLocked && lock.lockedBy == 'parent';
-
-        return Card(
-          elevation: 2,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(20.0),
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(
-                  isLocked ? Icons.lock : Icons.lock_open,
-                  size: 48,
-                  color: isLocked ? AppColors.error : AppColors.statusLinked,
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Manual Device Lock',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isLocked ? 'Device is currently LOCKED by you.' : 'Device is NOT manually locked.',
-                  style: TextStyle(
-                    color: isLocked ? AppColors.error : AppColors.textSub,
-                  ),
-                ),
                 if (lock.isLocked && lock.lockedBy == 'schedule')
                    Container(
-                     margin: const EdgeInsets.only(top: 12.0),
+                     margin: const EdgeInsets.only(bottom: 20.0),
                      padding: const EdgeInsets.all(12),
                      decoration: BoxDecoration(
                        color: Colors.orange.withOpacity(0.1),
@@ -100,28 +61,83 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
                        ],
                      ),
                    ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isLocked ? AppColors.background : AppColors.error,
-                      foregroundColor: isLocked ? AppColors.primary : Colors.white,
-                      side: isLocked ? const BorderSide(color: AppColors.primary) : null,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    onPressed: () {
-                      _service.setManualLock(widget.deviceId, !isLocked);
-                    },
-                    child: Text(isLocked ? 'Unlock Device' : 'Lock Device Now'),
-                  ),
-                )
+                _buildLockToggle(lock),
+                const SizedBox(height: 24),
+                _buildPendingRequests(),
+                const SizedBox(height: 24),
+                _buildSchedules(),
               ],
             ),
+          );
+        }
+      ),
+    );
+  }
+
+  Widget _buildLockToggle(ScreenTimeLock lock) {
+    final isLocked = lock.isLocked && lock.lockedBy == 'parent';
+    final isScheduleActive = lock.isLocked && lock.lockedBy == 'schedule';
+
+    return Center(
+      child: Column(
+        children: [
+          const SizedBox(height: 10),
+          GestureDetector(
+            onTap: () {
+              if (isScheduleActive) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Device is already locked by a schedule."),
+                    backgroundColor: Colors.orange,
+                    behavior: SnackBarBehavior.floating,
+                  )
+                );
+                return;
+              }
+              _service.setManualLock(widget.deviceId, !isLocked);
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isLocked ? AppColors.error : Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: (isLocked ? AppColors.error : AppColors.primary).withOpacity(isLocked ? 0.4 : 0.1),
+                    blurRadius: 20,
+                    spreadRadius: isLocked ? 10 : 2,
+                    offset: const Offset(0, 8),
+                  )
+                ],
+                border: Border.all(
+                  color: isLocked ? Colors.transparent : AppColors.primary.withOpacity(0.3),
+                  width: 2,
+                ),
+              ),
+              child: Center(
+                child: Icon(
+                  isLocked ? Icons.lock : Icons.power_settings_new,
+                  size: 60,
+                  color: isLocked ? Colors.white : AppColors.primary,
+                ),
+              ),
+            ),
           ),
-        );
-      }
+          const SizedBox(height: 20),
+          Text(
+            isLocked ? 'MANUAL LOCK ACTIVE' : 'TAP TO LOCK',
+            style: TextStyle(
+              fontSize: 16, 
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+              color: isLocked ? AppColors.error : AppColors.textSub,
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+      ),
     );
   }
 
@@ -149,7 +165,17 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     leading: const Icon(Icons.timer, color: AppColors.primary),
                     title: Text('Request for ${r.requestedTime} minutes'),
-                    subtitle: Text(DateFormat('hh:mm a, MMM dd').format(r.requestedAt)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(DateFormat('hh:mm a, MMM dd').format(r.requestedAt)),
+                        if (r.reason.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Text('"${r.reason}"', style: const TextStyle(fontStyle: FontStyle.italic)),
+                          ),
+                      ],
+                    ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -216,15 +242,44 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
                 }
               }).join(', ');
               
-              return Card(
-                margin: const EdgeInsets.only(bottom: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                child: ListTile(
-                  title: Text('${s.startTime} - ${s.endTime}'),
-                  subtitle: Text(daysStr.isEmpty ? 'No days set' : daysStr),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.delete_outline, color: AppColors.error),
-                    onPressed: () => _service.deleteSchedule(s.scheduleId),
+              final icons = [
+                 Icons.lock,
+                 Icons.school,
+                 Icons.book,
+                 Icons.nightlight_round,
+                 Icons.restaurant,
+                 Icons.sports_esports,
+              ];
+              final icon = icons[s.iconIndex % icons.length];
+              
+              return AnimatedOpacity(
+                opacity: s.isActive ? 1.0 : 0.5,
+                duration: const Duration(milliseconds: 300),
+                child: Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  child: ListTile(
+                    leading: Icon(icon, color: s.isActive ? AppColors.primary : Colors.grey),
+                    title: Text('${s.scheduleName} (${s.startTime} - ${s.endTime})', 
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                )),
+                    subtitle: Text(daysStr.isEmpty ? 'No days set' : daysStr),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Switch(
+                          value: s.isActive,
+                          onChanged: (val) => _service.toggleScheduleActive(s.scheduleId, val),
+                          activeColor: AppColors.primary,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, color: AppColors.error),
+                          onPressed: () => _service.deleteSchedule(s.scheduleId),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -236,9 +291,20 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
   }
 
   Future<void> _showAddScheduleDialog() async {
+    final nameController = TextEditingController();
     List<int> selectedDays = [1, 2, 3, 4, 5]; // default weekdays
     TimeOfDay? startT = const TimeOfDay(hour: 20, minute: 0);
     TimeOfDay? endT = const TimeOfDay(hour: 6, minute: 0);
+    int selectedIconParams = 0; // 0: lock, 1: school, 2: book, 3: night, 4: food, 5: game
+
+    final iconSet = [
+                 Icons.lock,
+                 Icons.school,
+                 Icons.book,
+                 Icons.nightlight_round,
+                 Icons.restaurant,
+                 Icons.sports_esports,
+    ];
 
     await showModalBottomSheet(
       context: context,
@@ -252,91 +318,133 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
             left: 24,
             right: 24,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Add Schedule Block', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 20),
-              
-              // Days selector
-              const Text('Select Days:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 4,
-                children: [1, 2, 3, 4, 5, 6, 7].map((day) {
-                   final isSelected = selectedDays.contains(day);
-                   final label = ['M','T','W','T','F','S','S'][day-1];
-                   return ChoiceChip(
-                     label: Text(label),
-                     selected: isSelected,
-                     onSelected: (val) {
-                       setModalState(() {
-                         if (val) selectedDays.add(day);
-                         else selectedDays.remove(day);
-                       });
-                     },
-                   );
-                }).toList(),
-              ),
-              const SizedBox(height: 20),
-              
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        final t = await showTimePicker(context: context, initialTime: startT!);
-                        if (t != null) setModalState(() => startT = t);
-                      },
-                      child: Text(startT?.format(context) ?? 'Start Time'),
-                    ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Add Schedule Block', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 20),
+                
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Schedule Name',
+                    hintText: 'e.g. School, Study, Bedtime',
+                    border: OutlineInputBorder(),
                   ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        final t = await showTimePicker(context: context, initialTime: endT!);
-                        if (t != null) setModalState(() => endT = t);
-                      },
-                      child: Text(endT?.format(context) ?? 'End Time'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () {
-                    if (startT == null || endT == null || selectedDays.isEmpty) return;
-                    
-                    final sTime = '${startT!.hour.toString().padLeft(2, '0')}:${startT!.minute.toString().padLeft(2, '0')}';
-                    final eTime = '${endT!.hour.toString().padLeft(2, '0')}:${endT!.minute.toString().padLeft(2, '0')}';
-
-                    final schedule = ScreenTimeSchedule(
-                      scheduleId: '', // Firebase auto ID
-                      deviceId: widget.deviceId,
-                      scheduleName: 'Custom Schedule',
-                      startTime: sTime,
-                      endTime: eTime,
-                      days: selectedDays,
-                      isActive: true,
-                      createdAt: DateTime.now(),
-                    );
-                    
-                    _service.createSchedule(schedule);
-                    Navigator.pop(ctx);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.all(16),
-                  ),
-                  child: const Text('Save Schedule Block'),
                 ),
-              )
-            ],
+                const SizedBox(height: 16),
+
+                const Text('Select Icon:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: List.generate(iconSet.length, (index) {
+                     final isSelected = selectedIconParams == index;
+                     return GestureDetector(
+                       onTap: () {
+                         setModalState(() => selectedIconParams = index);
+                       },
+                       child: Container(
+                         padding: const EdgeInsets.all(8),
+                         decoration: BoxDecoration(
+                           color: isSelected ? AppColors.primary.withOpacity(0.2) : Colors.transparent,
+                           border: Border.all(color: isSelected ? AppColors.primary : Colors.grey.shade400),
+                           shape: BoxShape.circle,
+                         ),
+                         child: Icon(iconSet[index], color: isSelected ? AppColors.primary : Colors.grey),
+                       ),
+                     );
+                  }),
+                ),
+                const SizedBox(height: 16),
+                
+                // Days selector
+                const Text('Select Days:', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 4,
+                  children: [1, 2, 3, 4, 5, 6, 7].map((day) {
+                     final isSelected = selectedDays.contains(day);
+                     final label = ['M','T','W','T','F','S','S'][day-1];
+                     return ChoiceChip(
+                       label: Text(label),
+                       selected: isSelected,
+                       onSelected: (val) {
+                         setModalState(() {
+                           if (val) selectedDays.add(day);
+                           else selectedDays.remove(day);
+                         });
+                       },
+                     );
+                  }).toList(),
+                ),
+                const SizedBox(height: 20),
+                
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final t = await showTimePicker(context: context, initialTime: startT!);
+                          if (t != null) setModalState(() => startT = t);
+                        },
+                        child: Text(startT?.format(context) ?? 'Start Time'),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () async {
+                          final t = await showTimePicker(context: context, initialTime: endT!);
+                          if (t != null) setModalState(() => endT = t);
+                        },
+                        child: Text(endT?.format(context) ?? 'End Time'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      final name = nameController.text.trim();
+                      if (name.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a schedule name!')));
+                        return;
+                      }
+                      if (startT == null || endT == null || selectedDays.isEmpty) return;
+                      
+                      final sTime = '${startT!.hour.toString().padLeft(2, '0')}:${startT!.minute.toString().padLeft(2, '0')}';
+                      final eTime = '${endT!.hour.toString().padLeft(2, '0')}:${endT!.minute.toString().padLeft(2, '0')}';
+
+                      final schedule = ScreenTimeSchedule(
+                        scheduleId: '', // Firebase auto ID
+                        deviceId: widget.deviceId,
+                        scheduleName: name,
+                        iconIndex: selectedIconParams,
+                        startTime: sTime,
+                        endTime: eTime,
+                        days: selectedDays,
+                        isActive: true,
+                        createdAt: DateTime.now(),
+                      );
+                      
+                      _service.createSchedule(schedule);
+                      Navigator.pop(ctx);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.all(16),
+                    ),
+                    child: const Text('Save Schedule Block'),
+                  ),
+                )
+              ],
+            ),
           ),
         ),
       ),

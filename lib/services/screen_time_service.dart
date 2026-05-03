@@ -19,7 +19,6 @@ class ScreenTimeService {
   // ── Watch Schedules (Parent / Child) ────────────────────────────────
   Stream<List<ScreenTimeSchedule>> watchSchedules(String deviceId) => _schedulesCol
       .where('device_id', isEqualTo: deviceId)
-      .where('is_active', isEqualTo: true)
       .snapshots()
       .map((snap) => snap.docs.map(ScreenTimeSchedule.fromFirestore).toList());
 
@@ -82,6 +81,11 @@ class ScreenTimeService {
   // ── Delete Schedule (Parent) ────────────────────────────────────────
   Future<void> deleteSchedule(String scheduleId) async {
     await _schedulesCol.doc(scheduleId).delete();
+  }
+
+  // ── Toggle Schedule (Parent) ────────────────────────────────────────
+  Future<void> toggleScheduleActive(String scheduleId, bool isActive) async {
+    await _schedulesCol.doc(scheduleId).update({'is_active': isActive});
   }
 
   // ── Submit Request (Child) ──────────────────────────────────────────

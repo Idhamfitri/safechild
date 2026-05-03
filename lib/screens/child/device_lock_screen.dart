@@ -17,7 +17,7 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
   final _screenTimeService = ScreenTimeService();
   bool _isRequesting = false;
 
-  Future<void> _requestTime(int minutes) async {
+  Future<void> _requestTime(int minutes, String reason) async {
     final prefs = await SharedPreferences.getInstance();
     final deviceId = prefs.getString('device_id');
     if (deviceId == null) return;
@@ -25,7 +25,7 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
     setState(() => _isRequesting = true);
     
     try {
-      await _screenTimeService.submitRequest(deviceId, minutes);
+      await _screenTimeService.submitRequest(deviceId, minutes, reason: reason);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Requested $minutes minutes. Pending parent approval.')),
@@ -43,48 +43,75 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
   }
 
   void _showRequestDialog() {
+    final reasonController = TextEditingController();
+    
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+          top: 24,
+          left: 24,
+          right: 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
               'Request Extra Time',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            ListTile(
-              leading: const Icon(Icons.timer_outlined, color: AppColors.primary),
-              title: const Text('15 Minutes'),
-              onTap: () {
-                Navigator.pop(context);
-                _requestTime(15);
-              },
+            TextField(
+              controller: reasonController,
+              decoration: const InputDecoration(
+                labelText: 'Reason for extension (Required)',
+                hintText: 'e.g. Finishing homework...',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 2,
             ),
-            ListTile(
-              leading: const Icon(Icons.timer_outlined, color: AppColors.primary),
-              title: const Text('30 Minutes'),
-              onTap: () {
-                Navigator.pop(context);
-                _requestTime(30);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.timer_outlined, color: AppColors.primary),
-              title: const Text('1 Hour'),
-              onTap: () {
-                Navigator.pop(context);
-                _requestTime(60);
-              },
+            const SizedBox(height: 20),
+            const Text('Select Time:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _TimeButton(15, reasonController),
+                _TimeButton(30, reasonController),
+                _TimeButton(60, reasonController),
+              ],
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _TimeButton(int minutes, TextEditingController controller) {
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+      ),
+      onPressed: () {
+        final reason = controller.text.trim();
+        if (reason.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please enter a reason first!')),
+          );
+          return;
+        }
+        Navigator.pop(context);
+        _requestTime(minutes, reason);
+      },
+      child: Text('$minutes min'),
     );
   }
 

@@ -108,7 +108,7 @@ class BypassEventModel {
         'detected_at':       Timestamp.fromDate(detectedAt),
       };
 
-  // ── Dummy events (shown until Module 3 writes real bypass events) ──────────
+  // ── Dummy events
   static List<BypassEventModel> dummies(String deviceId) {
     final now = DateTime.now();
     return [

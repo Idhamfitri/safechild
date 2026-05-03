@@ -1,4 +1,5 @@
 // lib/screens/parent/child_status_screen.dart
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -1360,15 +1361,17 @@ class _DailyChart extends StatelessWidget {
           return const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()));
         }
         final today = snap.data?.isNotEmpty == true ? snap.data!.first : null;
-        final apps  = (today?['apps'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
         final totalMin = (today?['total_minutes'] as num?)?.toInt() ?? 0;
+        final hourly   = (today?['hourly_totals'] as List<dynamic>? ?? List.filled(24, 0)).cast<int>();
 
-        if (apps.isEmpty) return _emptyChart('No usage data for today');
+        if (totalMin == 0) return _emptyChart('No usage data for today');
 
-        final sorted = [...apps]..sort((a, b) =>
-            (b['usage_minutes'] as num).compareTo(a['usage_minutes'] as num));
-        final top    = sorted.take(6).toList();
-        final maxMin = (top.first['usage_minutes'] as num?)?.toDouble() ?? 1.0;
+        int cumulative = 0;
+        final spots = <FlSpot>[];
+        for (int i = 0; i < 24; i++) {
+          cumulative += hourly[i];
+          spots.add(FlSpot(i.toDouble(), cumulative.toDouble()));
+        }
 
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Today\'s total: ${_fmtMinutes(totalMin)}',
@@ -1376,18 +1379,17 @@ class _DailyChart extends StatelessWidget {
           const SizedBox(height: 12),
           SizedBox(
             height: 200,
-            child: BarChart(
-              BarChartData(
-                maxY: maxMin * 1.2,
-                barTouchData: BarTouchData(
-                  touchTooltipData: BarTouchTooltipData(
-                    getTooltipItem: (group, gi, rod, ri) {
-                      final app = top[group.x];
-                      return BarTooltipItem(
-                        '${_appLabel(app["app_name"] ?? app["package_name"])}\n'
-                        '${_fmtMinutes((app["usage_minutes"] as num).toInt())}',
+            child: LineChart(
+              LineChartData(
+                minX: 0, maxX: 23,
+                minY: 0, maxY: (totalMin * 1.2).clamp(1.0, double.infinity),
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (touchedSpots) {
+                      return touchedSpots.map((spot) => LineTooltipItem(
+                        '${spot.x.toInt()}:00\n${_fmtMinutes(spot.y.toInt())}',
                         const TextStyle(color: Colors.white, fontSize: 11),
-                      );
+                      )).toList();
                     },
                   ),
                 ),
@@ -1395,16 +1397,11 @@ class _DailyChart extends StatelessWidget {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
+                      interval: 4,
                       getTitlesWidget: (value, _) {
-                        final i = value.toInt();
-                        if (i >= top.length) return const SizedBox.shrink();
-                        final name = top[i]['app_name'] as String? ??
-                            top[i]['package_name'] as String? ?? '?';
                         return Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(_appLabel(name),
-                              style: const TextStyle(fontSize: 9, color: AppColors.textSub),
-                              overflow: TextOverflow.ellipsis),
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Text('${value.toInt()}:00', style: const TextStyle(fontSize: 10, color: AppColors.textSub)),
                         );
                       },
                       reservedSize: 28,
@@ -1425,17 +1422,20 @@ class _DailyChart extends StatelessWidget {
                 ),
                 gridData: const FlGridData(show: true, drawVerticalLine: false),
                 borderData: FlBorderData(show: false),
-                barGroups: List.generate(top.length, (i) {
-                  final mins = (top[i]['usage_minutes'] as num?)?.toDouble() ?? 0;
-                  return BarChartGroupData(x: i, barRods: [
-                    BarChartRodData(
-                      toY:   mins,
-                      color: AppColors.primary.withOpacity(0.75),
-                      width: 18,
-                      borderRadius: BorderRadius.circular(4),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: AppColors.primary,
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: false),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: AppColors.primary.withOpacity(0.15),
                     ),
-                  ]);
-                }),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1460,7 +1460,8 @@ class _WeeklyChart extends StatelessWidget {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()));
         }
-        final days     = snap.data ?? [];
+        
+        final days = (snap.data ?? []).reversed.toList(); // Chronological (oldest to newest)
         final totalMin = days.fold<int>(0, (s, d) => s + ((d['total_minutes'] as num?)?.toInt() ?? 0));
         final maxDay   = days.fold<double>(1.0, (m, d) {
           final v = ((d['total_minutes'] as num?)?.toDouble() ?? 0);
@@ -1469,25 +1470,33 @@ class _WeeklyChart extends StatelessWidget {
 
         if (totalMin == 0) return _emptyChart('No usage data for last 7 days');
 
+        final spots = <FlSpot>[];
+        for (int i = 0; i < days.length; i++) {
+          final mins = ((days[i]['total_minutes'] as num?)?.toDouble() ?? 0);
+          spots.add(FlSpot(i.toDouble(), mins));
+        }
+
         return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Weekly total: ${_fmtMinutes(totalMin)}',
               style: const TextStyle(fontSize: 12, color: AppColors.textSub)),
           const SizedBox(height: 12),
           SizedBox(
             height: 200,
-            child: BarChart(
-              BarChartData(
-                maxY: maxDay * 1.2,
-                barTouchData: BarTouchData(
-                  touchTooltipData: BarTouchTooltipData(
-                    getTooltipItem: (group, gi, rod, ri) {
-                      final d    = days[group.x];
-                      final mins = (d['total_minutes'] as num?)?.toInt() ?? 0;
-                      final key  = d['date'] as String? ?? '';
-                      return BarTooltipItem(
-                        '$key\n${_fmtMinutes(mins)}',
-                        const TextStyle(color: Colors.white, fontSize: 11),
-                      );
+            child: LineChart(
+              LineChartData(
+                minX: 0, maxX: (days.length - 1).toDouble().clamp(1, 7),
+                minY: 0, maxY: maxDay * 1.2,
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (touchedSpots) {
+                      return touchedSpots.map((spot) {
+                        final d = days[spot.x.toInt()];
+                        final key  = d['date'] as String? ?? '';
+                        return LineTooltipItem(
+                          '$key\n${_fmtMinutes(spot.y.toInt())}',
+                          const TextStyle(color: Colors.white, fontSize: 11),
+                        );
+                      }).toList();
                     },
                   ),
                 ),
@@ -1497,19 +1506,18 @@ class _WeeklyChart extends StatelessWidget {
                       showTitles: true,
                       getTitlesWidget: (value, _) {
                         final i = value.toInt();
-                        if (i >= days.length) return const SizedBox.shrink();
+                        if (i >= days.length || i < 0) return const SizedBox.shrink();
                         String label = '';
                         try {
                           final dt = DateTime.parse(days[i]['date'] as String);
                           label = _dayLabels[dt.weekday - 1];
                         } catch (_) {}
                         return Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(label,
-                              style: const TextStyle(fontSize: 10, color: AppColors.textSub)),
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textSub)),
                         );
                       },
-                      reservedSize: 26,
+                      reservedSize: 28,
                     ),
                   ),
                   leftTitles: AxisTitles(
@@ -1527,17 +1535,20 @@ class _WeeklyChart extends StatelessWidget {
                 ),
                 gridData: const FlGridData(show: true, drawVerticalLine: false),
                 borderData: FlBorderData(show: false),
-                barGroups: List.generate(days.length, (i) {
-                  final mins = ((days[i]['total_minutes'] as num?)?.toDouble() ?? 0);
-                  return BarChartGroupData(x: i, barRods: [
-                    BarChartRodData(
-                      toY:   mins,
-                      color: AppColors.primary,
-                      width: 22,
-                      borderRadius: BorderRadius.circular(4),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    color: AppColors.primary,
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: true),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: AppColors.primary.withOpacity(0.15),
                     ),
-                  ]);
-                }),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1637,8 +1648,10 @@ class _RecentAppsSection extends StatelessWidget {
                 children: apps.map((app) {
                   final name    = app['app_name'] as String? ??
                       (app['package_name'] as String? ?? 'Unknown');
+                  final iconB64 = app['icon_base64'] as String? ?? '';
                   final mins    = (app['usage_minutes'] as num?)?.toInt() ?? 0;
-                  final fraction = mins / maxMin;
+                  final fraction = maxMin > 0 ? (mins / maxMin) : 0.0;
+                  
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Row(children: [
@@ -1648,13 +1661,25 @@ class _RecentAppsSection extends StatelessWidget {
                           color: AppColors.primary.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Center(
-                          child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: AppColors.primary, fontSize: 15),
-                          ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: iconB64.isNotEmpty
+                            ? Image.memory(
+                                base64Decode(iconB64),
+                                width: 34, height: 34, fit: BoxFit.cover,
+                                errorBuilder: (_,__,___) => Center(
+                                  child: Text(
+                                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                    style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary, fontSize: 15),
+                                  ),
+                                ),
+                              )
+                            : Center(
+                                child: Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.primary, fontSize: 15),
+                                ),
+                              ),
                         ),
                       ),
                       const SizedBox(width: 10),
