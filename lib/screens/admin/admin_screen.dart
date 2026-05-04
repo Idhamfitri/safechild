@@ -513,7 +513,7 @@ class _ParentCard extends StatelessWidget {
     final email   = parentData['email']    as String? ?? '—';
     final status  = parentData['account_status'] as String? ?? 'active';
     final devices = parentData['device_count']   as int? ?? 0;
-    final regDate = _formatDate(parentData['created_at']);
+    final regDate = _formatDate(parentData['date_created']);
 
     final isSuspended = status == 'suspended';
     final statusColor = isSuspended ? Colors.orange : const Color(0xFF2E7D32);

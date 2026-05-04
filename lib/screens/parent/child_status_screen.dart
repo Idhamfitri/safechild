@@ -12,15 +12,18 @@ import '../../services/heartbeat_service.dart';
 import '../../services/incident_service.dart';
 import '../../utils/app_theme.dart';
 import 'screen_time_mgmt_screen.dart';
+import 'configuration_setting_screen.dart';
 
 class ChildStatusScreen extends StatefulWidget {
   final String deviceId;
   final String deviceName;
+  final String linkId; // Added linkId
 
   const ChildStatusScreen({
     super.key,
     required this.deviceId,
     required this.deviceName,
+    required this.linkId,
   });
 
   @override
@@ -321,20 +324,7 @@ class _ChildStatusScreenState extends State<ChildStatusScreen>
 
   // ── Tab 2 — Settings ──────────────────────────────────────────────────────
   Widget _buildSettingsTab() {
-    return const Center(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.settings_outlined, size: 64, color: Color(0xFFBDBDBD)),
-        SizedBox(height: 16),
-        Text('Device Settings',
-            style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary)),
-        SizedBox(height: 8),
-        Text('Per-device configuration will appear here.',
-            style: TextStyle(fontSize: 13, color: AppColors.textSub)),
-      ]),
-    );
+    return ConfigurationSettingScreen(linkId: widget.linkId);
   }
 }
 

@@ -3,7 +3,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum PairingStatus { pending, linked, expired }
 enum LinkStatus    { active, removed }
-enum SetupPhase    { pending, paired, active }
 
 extension PairingStatusX on PairingStatus {
   String get value => name;
@@ -19,12 +18,6 @@ extension LinkStatusX on LinkStatus {
           orElse: () => LinkStatus.active);
 }
 
-extension SetupPhaseX on SetupPhase {
-  String get value => name;
-  static SetupPhase fromString(String? s) =>
-      SetupPhase.values.firstWhere((e) => e.name == s,
-          orElse: () => SetupPhase.pending);
-}
 
 class ParentChildLinkModel {
   final String        pCLinkId;
@@ -34,8 +27,6 @@ class ParentChildLinkModel {
   final PairingStatus pairingStatus;
   final DateTime?     linkedAt;
   final LinkStatus    linkStatus;
-  final SetupPhase    setupPhase;    
-  final int           setupStep;      
 
   ParentChildLinkModel({
     required this.pCLinkId,
@@ -45,8 +36,6 @@ class ParentChildLinkModel {
     this.pairingStatus = PairingStatus.pending,
     this.linkedAt,
     this.linkStatus   = LinkStatus.active,
-    this.setupPhase   = SetupPhase.pending,
-    this.setupStep    = 0,
   });
 
   factory ParentChildLinkModel.fromFirestore(
@@ -62,8 +51,6 @@ class ParentChildLinkModel {
           ? (d['linked_at'] as Timestamp).toDate()
           : null,
       linkStatus:  LinkStatusX.fromString(d['link_status'] ?? 'active'),
-      setupPhase:  SetupPhaseX.fromString(d['setup_phase']),
-      setupStep:   d['setup_step'] as int? ?? 0,
     );
   }
 
@@ -74,12 +61,9 @@ class ParentChildLinkModel {
         'pairing_status': pairingStatus.value,
         if (linkedAt != null) 'linked_at': Timestamp.fromDate(linkedAt!),
         'link_status':    linkStatus.value,
-        'setup_phase':    setupPhase.value,
-        'setup_step':     setupStep,
       };
 
   bool get isLinked      => pairingStatus == PairingStatus.linked;
   bool get isPending     => pairingStatus == PairingStatus.pending;
   bool get isExpired     => pairingStatus == PairingStatus.expired;
-  bool get isSetupActive => setupPhase == SetupPhase.active;
 }

@@ -36,8 +36,12 @@ class ContentDetectionService {
     'org.telegram.messenger',
     'com.google.android.youtube',
     'com.facebook.katana',
+    'com.facebook.orca', // Messenger
     'com.twitter.android',
     'x.com',
+    'com.snapchat.android',
+    'com.discord',
+    'com.reddit.frontpage',
   };
 
   static const _uiPatterns = [
@@ -276,11 +280,25 @@ Text: "$text"
   // ─────────────────────────────────────────────────────────────────────
 
   String _friendlyAppName(String pkg) {
-    if (pkg.contains('whatsapp')) return 'WhatsApp';
+    if (pkg.contains('whatsapp'))  return 'WhatsApp';
+    if (pkg.contains('chrome'))    return 'Chrome';
     if (pkg.contains('instagram')) return 'Instagram';
-    if (pkg.contains('chrome')) return 'Chrome';
-    if (pkg.contains('tiktok')) return 'TikTok';
-    return pkg.split('.').last;
+    if (pkg.contains('trill') || pkg.contains('tiktok')) return 'TikTok';
+    if (pkg.contains('telegram'))  return 'Telegram';
+    if (pkg.contains('youtube'))   return 'YouTube';
+    if (pkg.contains('facebook')) {
+      if (pkg.contains('orca')) return 'Messenger';
+      return 'Facebook';
+    }
+    if (pkg.contains('twitter') || pkg.contains('x.com')) return 'X / Twitter';
+    if (pkg.contains('snapchat'))  return 'Snapchat';
+    if (pkg.contains('discord'))   return 'Discord';
+    if (pkg.contains('reddit'))    return 'Reddit';
+    
+    final parts = pkg.split('.');
+    return parts.isNotEmpty
+        ? parts.last[0].toUpperCase() + parts.last.substring(1)
+        : pkg;
   }
 
   Future<void> _logIncident({

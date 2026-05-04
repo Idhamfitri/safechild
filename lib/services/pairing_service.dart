@@ -53,8 +53,6 @@ class PairingService {
       pairingCode:   code,
       pairingStatus: PairingStatus.pending,
       linkStatus:    LinkStatus.active,
-      setupPhase:    SetupPhase.pending,
-      setupStep:     0,
     );
     await _links.doc(linkId).set(link.toFirestore());
 
@@ -127,12 +125,10 @@ class PairingService {
         'setup_complete': false,
       });
 
-      // Flip link to linked + set phase = paired
+      // Flip link to linked
       await _links.doc(linkDoc.id).update({
         'pairing_status': 'linked',
         'linked_at':      Timestamp.now(),
-        'setup_phase':    'paired',  
-        'setup_step':     0,
       });
 
       return null; // success
@@ -152,8 +148,6 @@ class PairingService {
     bool granted = true,
   }) async {
     await Future.wait([
-      // Advance the step shown to parent
-      _links.doc(linkId).update({'setup_step': stepIndex + 1}),
       // Mark permission as granted in device doc
       _devices.doc(deviceId).update({
         'permission_status.$permissionKey': granted,
@@ -169,10 +163,6 @@ class PairingService {
     required PermissionStatus finalStatus,
   }) async {
     await Future.wait([
-      _links.doc(linkId).update({
-        'setup_phase': 'active',
-        'setup_step':  4,          
-      }),
       _devices.doc(deviceId).update({
         'permission_status': finalStatus.toMap(),
         'setup_complete':    true,
@@ -229,69 +219,60 @@ class PairingService {
   }
 
   Future<void> unlinkAndDeleteAll({
-  required String linkId,
-  required String deviceId,
+    required String linkId,
+    required String deviceId,
   }) async {
-  // Firestore batch — max 500 ops per batch, use multiple if needed
-  WriteBatch batch1 = _db.batch();
-  WriteBatch batch2 = _db.batch();
-  int batch2Count = 0;
+    final batch = _db.batch();
 
-  // ── 1. Delete parent_child_links document ─────────────────────────────
-  batch1.delete(_db.collection('parent_child_links').doc(linkId));
+    // 1. Delete the Link record
+    batch.delete(_db.collection('parent_child_links').doc(linkId));
 
-  // ── 2. Delete child_devices document ─────────────────────────────────
-  batch1.delete(_db.collection('child_devices').doc(deviceId));
+    // 2. Delete the Child Device profile
+    batch.delete(_db.collection('child_devices').doc(deviceId));
 
-  // ── 3. Delete heartbeat document (doc ID = deviceId) ──────────────────
-  batch1.delete(_db.collection('heartbeat').doc(deviceId));
+    // 3. Delete Monitoring Settings associated with the link
+    batch.delete(_db.collection('monitoring_settings').doc(linkId));
 
-  // ── 4. Delete monitoring_setting for this link ────────────────────────
-  final monitorSnap = await _db
-      .collection('monitoring_setting')
-      .where('link_id', isEqualTo: linkId)
-      .get();
-  for (final doc in monitorSnap.docs) {
-    batch1.delete(doc.reference);
-  }
+    // 4. Delete Heartbeat/Status data
+    batch.delete(_db.collection('heartbeat').doc(deviceId));
 
-  // ── 5. Delete incidents for this device ───────────────────────────────
-  final incidentsSnap = await _db
-      .collection('incidents')
-      .where('device_id', isEqualTo: deviceId)
-      .get();
-  for (final doc in incidentsSnap.docs) {
-    if (batch2Count < 490) {
-      batch2.delete(doc.reference);
-      batch2Count++;
+    // 5. Delete Screen Time Locks
+    batch.delete(_db.collection('screen_time_locks').doc(deviceId));
+
+    // 6. Delete Screen Time Schedules
+    final schedules = await _db
+        .collection('screen_time_schedules')
+        .where('device_id', isEqualTo: deviceId)
+        .get();
+    for (var doc in schedules.docs) {
+      batch.delete(doc.reference);
     }
-  }
 
-  // ── 6. Delete bypass_events for this device ────────────────────────────
-  final bypassSnap = await _db
-      .collection('bypass_events')
-      .where('device_id', isEqualTo: deviceId)
-      .get();
-  for (final doc in bypassSnap.docs) {
-    if (batch2Count < 490) {
-      batch2.delete(doc.reference);
-      batch2Count++;
+    // 7. Delete Screen Time Requests
+    final requests = await _db
+        .collection('screen_time_requests')
+        .where('device_id', isEqualTo: deviceId)
+        .get();
+    for (var doc in requests.docs) {
+      batch.delete(doc.reference);
     }
-  }
 
-  // ── 7. Delete app_usage for this device ───────────────────────────────
-  final appUsageSnap = await _db
-      .collection('app_usage')
-      .where('device_id', isEqualTo: deviceId)
-      .get();
-  for (final doc in appUsageSnap.docs) {
-    if (batch2Count < 490) {
-      batch2.delete(doc.reference);
-      batch2Count++;
+    // 8. Delete Daily Screen Time stats (subcollection)
+    final dailyStats = await _db
+        .collection('screen_time')
+        .doc(deviceId)
+        .collection('daily')
+        .get();
+    for (var doc in dailyStats.docs) {
+      batch.delete(doc.reference);
     }
+    
+    // Delete the root screen_time document for this device
+    batch.delete(_db.collection('screen_time').doc(deviceId));
+
+    // NOTE: We EXPLICITLY DO NOT delete the 'incidents' and 'bypass_events'
+    // collections as they are required for system analysis and reporting.
+
+    await batch.commit();
   }
-  // ── Commit both batches ────────────────────────────────────────────────
-  await batch1.commit();
-  if (batch2Count > 0) await batch2.commit();
- }
 }

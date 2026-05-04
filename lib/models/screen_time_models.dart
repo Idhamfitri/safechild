@@ -9,7 +9,7 @@ class ScreenTimeSchedule {
   final int iconIndex; // To store symbolic icon index (e.g., 0=Lock, 1=Book, 2=School)
   final String startTime; // e.g. "20:00"
   final String endTime;   // e.g. "22:00"
-  final List<int> days;   // 1=Mon, 7=Sun
+  final List<String> days;   // 'monday', 'tuesday', etc.
   final bool isActive;
   final DateTime createdAt;
 
@@ -34,7 +34,7 @@ class ScreenTimeSchedule {
       iconIndex:    d['icon_index'] ?? 0,
       startTime:    d['start_time'] ?? '00:00',
       endTime:      d['end_time'] ?? '00:00',
-      days:         List<int>.from(d['days'] ?? []),
+      days:         List<String>.from(d['days'] ?? []),
       isActive:     d['is_active'] ?? true,
       createdAt:    (d['created_at'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -52,7 +52,8 @@ class ScreenTimeSchedule {
       };
 
   bool contains(TimeOfDay now, int weekday) {
-    if (!isActive || !days.contains(weekday)) return false;
+    final weekdayStr = _weekdayToString(weekday);
+    if (!isActive || !days.contains(weekdayStr)) return false;
     
     int tMin = now.hour * 60 + now.minute;
     
@@ -68,6 +69,11 @@ class ScreenTimeSchedule {
       return tMin >= sMin || tMin <= eMin;
     }
     return tMin >= sMin && tMin < eMin;
+  }
+  static String _weekdayToString(int weekday) {
+    const daysMap = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    if (weekday >= 1 && weekday <= 7) return daysMap[weekday - 1];
+    return '';
   }
 }
 
@@ -119,17 +125,15 @@ class ScreenTimeLock {
   final String lockId;
   final String deviceId;
   final bool isLocked;
-  final String? lockedBy; // 'parent' or 'schedule'
   final DateTime? startTime;
-  final DateTime? endTime;
+  final DateTime? unlockedAt;
 
   ScreenTimeLock({
     required this.lockId,
     required this.deviceId,
     required this.isLocked,
-    this.lockedBy,
     this.startTime,
-    this.endTime,
+    this.unlockedAt,
   });
 
   factory ScreenTimeLock.fromFirestore(DocumentSnapshot<Map<String, dynamic>> doc) {
@@ -138,17 +142,15 @@ class ScreenTimeLock {
       lockId:    doc.id,
       deviceId:  d['device_id'] ?? '',
       isLocked:  d['is_locked'] ?? false,
-      lockedBy:  d['locked_by'],
-      startTime: (d['start_time'] as Timestamp?)?.toDate(),
-      endTime:   (d['end_time'] as Timestamp?)?.toDate(),
+      startTime:  (d['start_time'] as Timestamp?)?.toDate(),
+      unlockedAt: (d['unlocked_at'] as Timestamp?)?.toDate(),
     );
   }
   
   Map<String, dynamic> toFirestore() => {
        'device_id':  deviceId,
        'is_locked':  isLocked,
-       'locked_by':  lockedBy,
-       if (startTime != null) 'start_time': Timestamp.fromDate(startTime!),
-       if (endTime   != null) 'end_time':   Timestamp.fromDate(endTime!),
+       if (startTime  != null) 'start_time': Timestamp.fromDate(startTime!),
+       if (unlockedAt != null) 'unlocked_at': Timestamp.fromDate(unlockedAt!),
   };
 }

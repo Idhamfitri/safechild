@@ -37,6 +37,7 @@ class ScreenTimeService {
       'device_id': deviceId,
       'is_locked': true,
       'locked_by': 'parent',
+      'unlocked_at': FieldValue.delete(), // Ensure it's treated as manual lock
       'start_time': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }

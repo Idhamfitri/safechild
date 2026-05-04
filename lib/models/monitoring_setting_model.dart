@@ -14,6 +14,7 @@ class MonitoringSettingModel {
   final bool    geminiContentFilterEnabled;
   final bool    smsNotificationEnabled;
   final bool    notifyWhenDeviceOff;
+  final bool    bypassDetectionEnabled; // Added field
 
   MonitoringSettingModel({
     required this.linkId,
@@ -24,6 +25,7 @@ class MonitoringSettingModel {
     this.geminiContentFilterEnabled = true,
     this.smsNotificationEnabled    = false,
     this.notifyWhenDeviceOff       = true,
+    this.bypassDetectionEnabled    = true, // Default to true
   });
 
   factory MonitoringSettingModel.defaults(String linkId) =>
@@ -44,6 +46,7 @@ class MonitoringSettingModel {
       geminiContentFilterEnabled: d['gemini_content_filter_enabled'] ?? true,
       smsNotificationEnabled:     d['sms_notification_enabled']      ?? false,
       notifyWhenDeviceOff:        d['notify_when_device_off']        ?? true,
+      bypassDetectionEnabled:     d['bypass_detection_enabled']     ?? true,
     );
   }
 
@@ -58,6 +61,7 @@ class MonitoringSettingModel {
         'gemini_content_filter_enabled': geminiContentFilterEnabled,
         'sms_notification_enabled':      smsNotificationEnabled,
         'notify_when_device_off':        notifyWhenDeviceOff,
+        'bypass_detection_enabled':      bypassDetectionEnabled,
       };
 
   MonitoringSettingModel copyWith({
@@ -67,6 +71,7 @@ class MonitoringSettingModel {
     bool? geminiContentFilterEnabled,
     bool? smsNotificationEnabled,
     bool? notifyWhenDeviceOff,
+    bool? bypassDetectionEnabled,
   }) =>
       MonitoringSettingModel(
         linkId:                     linkId,
@@ -76,5 +81,6 @@ class MonitoringSettingModel {
         geminiContentFilterEnabled: geminiContentFilterEnabled ?? this.geminiContentFilterEnabled,
         smsNotificationEnabled:     smsNotificationEnabled    ?? this.smsNotificationEnabled,
         notifyWhenDeviceOff:        notifyWhenDeviceOff       ?? this.notifyWhenDeviceOff,
+        bypassDetectionEnabled:     bypassDetectionEnabled    ?? this.bypassDetectionEnabled,
       );
 }

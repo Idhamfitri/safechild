@@ -39,7 +39,7 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (lock.isLocked && lock.lockedBy == 'schedule')
+                if (lock.isLocked && lock.unlockedAt != null)
                    Container(
                      margin: const EdgeInsets.only(bottom: 20.0),
                      padding: const EdgeInsets.all(12),
@@ -75,8 +75,8 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
   }
 
   Widget _buildLockToggle(ScreenTimeLock lock) {
-    final isLocked = lock.isLocked && lock.lockedBy == 'parent';
-    final isScheduleActive = lock.isLocked && lock.lockedBy == 'schedule';
+    final isLocked = lock.isLocked && lock.unlockedAt == null;
+    final isScheduleActive = lock.isLocked && lock.unlockedAt != null;
 
     return Center(
       child: Column(
@@ -231,13 +231,13 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
             ...schedules.map((s) {
               final daysStr = s.days.map((d) {
                 switch(d) {
-                  case 1: return 'Mon';
-                  case 2: return 'Tue';
-                  case 3: return 'Wed';
-                  case 4: return 'Thu';
-                  case 5: return 'Fri';
-                  case 6: return 'Sat';
-                  case 7: return 'Sun';
+                  case 'monday': return 'Mon';
+                  case 'tuesday': return 'Tue';
+                  case 'wednesday': return 'Wed';
+                  case 'thursday': return 'Thu';
+                  case 'friday': return 'Fri';
+                  case 'saturday': return 'Sat';
+                  case 'sunday': return 'Sun';
                   default: return '';
                 }
               }).join(', ');
@@ -260,12 +260,20 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   child: ListTile(
                     leading: Icon(icon, color: s.isActive ? AppColors.primary : Colors.grey),
-                    title: Text('${s.scheduleName} (${s.startTime} - ${s.endTime})', 
+                    title: Text(s.scheduleName, 
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   color: Colors.black,
                                 )),
-                    subtitle: Text(daysStr.isEmpty ? 'No days set' : daysStr),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        Text('${s.startTime} - ${s.endTime}', style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                        const SizedBox(height: 2),
+                        Text(daysStr.isEmpty ? 'No days set' : daysStr, style: const TextStyle(fontSize: 12, color: Colors.black54)),
+                      ],
+                    ),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -292,7 +300,7 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
 
   Future<void> _showAddScheduleDialog() async {
     final nameController = TextEditingController();
-    List<int> selectedDays = [1, 2, 3, 4, 5]; // default weekdays
+    List<String> selectedDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']; // default weekdays
     TimeOfDay? startT = const TimeOfDay(hour: 20, minute: 0);
     TimeOfDay? endT = const TimeOfDay(hour: 6, minute: 0);
     int selectedIconParams = 0; // 0: lock, 1: school, 2: book, 3: night, 4: food, 5: game
@@ -365,9 +373,12 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 4,
-                  children: [1, 2, 3, 4, 5, 6, 7].map((day) {
+                  children: List.generate(7, (index) {
+                     const daysList = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+                     const labels = ['M','T','W','T','F','S','S'];
+                     final day = daysList[index];
+                     final label = labels[index];
                      final isSelected = selectedDays.contains(day);
-                     final label = ['M','T','W','T','F','S','S'][day-1];
                      return ChoiceChip(
                        label: Text(label),
                        selected: isSelected,
@@ -378,7 +389,7 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
                          });
                        },
                      );
-                  }).toList(),
+                  }),
                 ),
                 const SizedBox(height: 20),
                 

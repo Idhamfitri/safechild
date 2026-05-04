@@ -5,9 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class DeviceLockScreen extends StatefulWidget {
   final String lockReason;
-  final String? lockedBy;
+  final bool isManualLock;
   
-  const DeviceLockScreen({super.key, required this.lockReason, this.lockedBy});
+  const DeviceLockScreen({super.key, required this.lockReason, this.isManualLock = false});
 
   @override
   State<DeviceLockScreen> createState() => _DeviceLockScreenState();
@@ -130,51 +130,39 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    widget.lockedBy == 'parent' ? Icons.sentiment_very_dissatisfied : Icons.lock_outline,
+                    widget.isManualLock ? Icons.sentiment_very_dissatisfied : Icons.lock_outline,
                     size: 100,
                     color: Colors.white,
                   ),
                   const SizedBox(height: 30),
                   Text(
-                    widget.lockedBy == 'parent' ? 'Locked by Parent' : 'Device Locked',
+                    widget.lockReason,
+                    textAlign: TextAlign.center,
                     style: const TextStyle(
-                      fontSize: 32,
+                      fontSize: 24,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    widget.lockedBy == 'parent' 
-                      ? 'Device has been locked by parent.' 
-                      : widget.lockReason,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      color: Colors.white70,
-                    ),
-                  ),
                   const SizedBox(height: 60),
-                  if (widget.lockedBy != 'parent')
-                    ElevatedButton(
+                  if (!widget.isManualLock)
+                    TextButton(
                       onPressed: _isRequesting ? null : _showRequestDialog,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: AppColors.primary,
-                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white70,
                       ),
                       child: _isRequesting
                           ? const SizedBox(
                               width: 20,
                               height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
                             )
                           : const Text(
-                              'Request Extra Time',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                              'Request time override',
+                              style: TextStyle(
+                                fontSize: 14,
+                                decoration: TextDecoration.underline,
+                              ),
                             ),
                     ),
                 ],

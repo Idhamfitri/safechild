@@ -250,7 +250,7 @@ Future<void> _writeUsageStats(
         0, (sum, a) => sum + (a['usage_minutes'] as int));
 
     // ── Group unimportant apps into "Other" ───────────────────────────────
-    final importantApps = ['WhatsApp', 'Chrome', 'Instagram', 'TikTok', 'Telegram', 'YouTube', 'Facebook', 'X / Twitter', 'Snapchat', 'Netflix', 'Spotify'];
+    final importantApps = ['WhatsApp', 'Chrome', 'Instagram', 'TikTok', 'Telegram', 'YouTube', 'Facebook', 'Messenger', 'X / Twitter', 'Snapchat', 'Discord', 'Reddit', 'Netflix', 'Spotify'];
     final filteredApps = <Map<String, dynamic>>[];
     int totalOtherMinutes = 0;
 
@@ -329,14 +329,17 @@ String _friendlyAppName(String packageName) {
   if (packageName.contains('whatsapp'))  return 'WhatsApp';
   if (packageName.contains('chrome'))    return 'Chrome';
   if (packageName.contains('instagram')) return 'Instagram';
-  if (packageName.contains('tiktok'))    return 'TikTok';
+  if (packageName.contains('tiktok') || packageName.contains('trill')) return 'TikTok';
   if (packageName.contains('telegram'))  return 'Telegram';
   if (packageName.contains('youtube'))   return 'YouTube';
-  if (packageName.contains('facebook'))  return 'Facebook';
-  if (packageName.contains('twitter') ||
-      packageName.contains('x.com'))     return 'X / Twitter';
-  if (packageName.contains('tiktok'))    return 'TikTok';
+  if (packageName.contains('facebook')) {
+    if (packageName.contains('orca')) return 'Messenger';
+    return 'Facebook';
+  }
+  if (packageName.contains('twitter') || packageName.contains('x.com')) return 'X / Twitter';
   if (packageName.contains('snapchat'))  return 'Snapchat';
+  if (packageName.contains('discord'))   return 'Discord';
+  if (packageName.contains('reddit'))    return 'Reddit';
   if (packageName.contains('netflix'))   return 'Netflix';
   if (packageName.contains('spotify'))   return 'Spotify';
   final parts = packageName.split('.');
@@ -368,39 +371,52 @@ Future<void> _checkScreenTimeLock(String deviceId) async {
     final weekday = now.weekday;
     
     bool shouldBeLockedBySchedule = false;
+    ScreenTimeSchedule? activeSchedule;
     for (var s in schedules) {
       if (s.contains(timeOfDay, weekday)) {
         shouldBeLockedBySchedule = true;
+        activeSchedule = s;
         break;
       }
     }
     
     // If we have an active "snooze" period (approved time extension), it overrides the schedule lock temporarily
-    if (shouldBeLockedBySchedule && lock.endTime != null && lock.endTime!.isAfter(now)) {
+    if (shouldBeLockedBySchedule && !lock.isLocked && lock.unlockedAt != null && lock.unlockedAt!.isAfter(now)) {
       shouldBeLockedBySchedule = false;
     }
     
     // Evaluate transitions
-    if (lock.isLocked && lock.lockedBy == 'parent') {
-      // Parent lock supersedes everything. Do not unlock it automatically.
+    if (lock.isLocked && lock.unlockedAt == null) {
+      // Parent manual lock supersedes everything. Do not unlock it automatically.
       _bringAppToForeground(hardwareLock: true);
       return;
     }
     
-    if (shouldBeLockedBySchedule && (!lock.isLocked || lock.lockedBy != 'schedule')) {
+    if (shouldBeLockedBySchedule && (!lock.isLocked || lock.unlockedAt == null)) {
+      // Find the end time of the active schedule to set unlocked_at
+      DateTime? scheduleEndTime;
+      if (activeSchedule != null) {
+         final eParts = activeSchedule.endTime.split(':');
+         if (eParts.length == 2) {
+            scheduleEndTime = DateTime(now.year, now.month, now.day, int.parse(eParts[0]), int.parse(eParts[1]));
+            if (scheduleEndTime.isBefore(now)) scheduleEndTime = scheduleEndTime.add(const Duration(days: 1));
+         }
+      }
+
       // Transition to Schedule Lock
       await db.collection('screen_time_locks').doc(deviceId).set({
         'device_id': deviceId,
         'is_locked': true,
-        'locked_by': 'schedule',
         'start_time': FieldValue.serverTimestamp(),
+        if (scheduleEndTime != null) 'unlocked_at': Timestamp.fromDate(scheduleEndTime),
       }, SetOptions(merge: true));
       // First time catching them with schedule -> hardware lock
       _bringAppToForeground(hardwareLock: true);
-    } else if (!shouldBeLockedBySchedule && lock.isLocked && lock.lockedBy == 'schedule') {
-      // Transition to Unlock
+    } else if (!shouldBeLockedBySchedule && lock.isLocked && lock.unlockedAt != null) {
+      // Transition to Unlock (Schedule over)
       await db.collection('screen_time_locks').doc(deviceId).set({
          'is_locked': false,
+         'unlocked_at': FieldValue.delete(),
       }, SetOptions(merge: true));
     } else if (lock.isLocked) {
       // If it's already correctly locked, just annoy them by bringing to foreground.

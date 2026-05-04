@@ -22,10 +22,10 @@ class AdminService {
       _db.collection('parents').get(),
       _db.collection('child_devices').get(),
       _db.collection('parent_child_links')
-          .where('status', isEqualTo: 'active').get(),
+          .where('link_status', isEqualTo: 'active').get(),
       // Today's alerts = incidents + bypass_events
       _db.collection('incidents')
-          .where('created_at', isGreaterThanOrEqualTo: todayTs).get(),
+          .where('detected_at', isGreaterThanOrEqualTo: todayTs).get(),
       _db.collection('bypass_events')
           .where('timestamp', isGreaterThanOrEqualTo: todayTs).get(),
     ]);
@@ -86,8 +86,8 @@ class AdminService {
       final nextTs = Timestamp.fromDate(next);
 
       final inc = await _db.collection('incidents')
-          .where('created_at', isGreaterThanOrEqualTo: dayTs)
-          .where('created_at', isLessThan: nextTs)
+          .where('detected_at', isGreaterThanOrEqualTo: dayTs)
+          .where('detected_at', isLessThan: nextTs)
           .get();
       final byp = await _db.collection('bypass_events')
           .where('timestamp', isGreaterThanOrEqualTo: dayTs)
@@ -114,7 +114,7 @@ class AdminService {
         final linksSnap = await _db
             .collection('parent_child_links')
             .where('parent_id', isEqualTo: doc.id)
-            .where('status', isEqualTo: 'active')
+            .where('link_status', isEqualTo: 'active')
             .get();
         data['device_count'] = linksSnap.docs.length;
 
@@ -184,6 +184,6 @@ class AdminService {
 
   Future<void> unlinkDevice(String linkId) async {
     await _db.collection('parent_child_links')
-        .doc(linkId).update({'status': 'unlinked'});
+        .doc(linkId).update({'link_status': 'removed'});
   }
 }

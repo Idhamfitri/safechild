@@ -40,8 +40,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
 
     if (updated.isExpired && !_navigating) _showExpiredDialog();
 
-  
-    if (updated.isSetupActive && !_navigating) {
+    if (updated.isLinked && !_navigating) {
       _navigating = true;
       HapticFeedback.mediumImpact();
       Future.delayed(const Duration(milliseconds: 800), () {
@@ -128,7 +127,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
   @override
   Widget build(BuildContext context) {
     final link  = _link ?? widget.link;
-    final phase = link.setupPhase;
+    final isPending = link.isPending;
 
     return PopScope(
       canPop: false,
@@ -141,7 +140,7 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
             onPressed: _cancel,
           ),
         ),
-        body: phase == SetupPhase.pending
+        body: isPending
             ? _buildCodeDisplay(link.pairingCode)
             : _buildLinking(),
       ),

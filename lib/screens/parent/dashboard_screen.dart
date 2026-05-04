@@ -79,7 +79,8 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
       title: const Text('Remove Device'),
       content: const Text(
         'This will permanently remove this device and delete all '
-        'associated data including incidents, heartbeat, and usage history. '
+        'associated data including heartbeat, schedules, and usage history. '
+        'Note: Incident logs and bypass attempts will be retained for analysis. '
         'This cannot be undone.',
       ),
       actions: [
@@ -191,6 +192,7 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
                            ChildStatusScreen(
                             deviceId:   links[i].deviceId ?? '',
                             deviceName: 'Child Device',
+                            linkId:     links[i].pCLinkId,
                         ),
                     ),
                   ),
