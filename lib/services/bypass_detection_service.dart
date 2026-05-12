@@ -1,6 +1,7 @@
 // lib/services/bypass_detection_service.dart
 import 'dart:async';
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
@@ -13,8 +14,14 @@ class BypassDetectionService {
   DateTime?           _lastRedirect;
   DateTime?           _lastSettingsLog;
   DateTime?           _lastDangerousLog;
+  bool                _isLocked = false;
   // Per-package log throttle — prevents spam in terminal
   final Map<String, DateTime> _lastLogTime = {};
+
+  void setLocked(bool locked) {
+    _isLocked = locked;
+    debugPrint('BYPASS: lock state updated to: $locked');
+  }
 
   // ── Settings packages to monitor ─────────────────────────────────────
   static const _settingsPackages = {
@@ -69,13 +76,32 @@ class BypassDetectionService {
   }
 
   Future<void> stop() async {
-    await _subscription?.cancel();
-    _subscription = null;
-    debugPrint('BYPASS: bypass detection stopped');
+    try {
+      if (_subscription != null) {
+        await _subscription?.cancel();
+      }
+    } catch (e) {
+      debugPrint('BYPASS: Warning - Accessibility stream de-activation error: $e');
+    } finally {
+      _subscription = null;
+      debugPrint('BYPASS: bypass detection stopped');
+    }
   }
 
   void _onEvent(AccessibilityEvent event) {
     final pkg  = event.packageName?.toLowerCase() ?? '';
+
+    // ── 1. If Locked Enforcement ──────────────────────────────────────────
+    // If the device is supposed to be locked, any app that isn't SafeChild
+    // triggers an immediate redirect back to the lock screen.
+    if (_isLocked && pkg.isNotEmpty && !pkg.contains('com.safechild.safechild')) {
+       // Ignore system UI and launcher to avoid some flickering, but keep it tight
+       if (!pkg.contains('android.systemui') && !pkg.contains('launcher')) {
+          debugPrint('BYPASS: Device is locked. Blocking app: $pkg');
+          _redirectToSafeChild();
+          return;
+       }
+    }
     
     // ── Throttle debug logs — max one log per pkg per 2 seconds ──────────
     final now = DateTime.now();
@@ -151,6 +177,17 @@ class BypassDetectionService {
     });
 
     debugPrint('BYPASS: redirected to home screen ✓');
+  }
+
+  void _redirectToSafeChild() {
+    AndroidIntent(
+      action: 'android.intent.action.MAIN',
+      package: 'com.safechild.safechild',
+      componentName: 'com.safechild.safechild.MainActivity',
+      flags: [Flag.FLAG_ACTIVITY_NEW_TASK, Flag.FLAG_ACTIVITY_REORDER_TO_FRONT],
+    ).launch().catchError((e) {
+       debugPrint('BYPASS: SafeChild redirect failed: $e');
+    });
   }
 
   // ── Log bypass event to Firestore ─────────────────────────────────────

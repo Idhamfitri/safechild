@@ -190,6 +190,9 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
          _isManualLock = lock.unlockedAt == null;
          _lockReason = _isManualLock ? 'Device is manually locked by parent' : 'Device is being locked';
        });
+       
+       // Update bypass service state for active enforcement
+       _bypassService.setLocked(isLocked);
     }, onError: (_) {});
   }
 

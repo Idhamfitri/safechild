@@ -83,9 +83,16 @@ class ContentDetectionService {
   }
 
   Future<void> stop() async {
-    await _accessibilitySubscription?.cancel();
-    _accessibilitySubscription = null;
-    debugPrint('SAFECHILD: service stopped.');
+    try {
+      if (_accessibilitySubscription != null) {
+        await _accessibilitySubscription?.cancel();
+      }
+    } catch (e) {
+      debugPrint('SAFECHILD: Warning - Accessibility stream de-activation error: $e');
+    } finally {
+      _accessibilitySubscription = null;
+      debugPrint('SAFECHILD: service stopped.');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────

@@ -135,7 +135,7 @@ class ScreenTimeService {
        final unlockedUntil = DateTime.now().add(Duration(minutes: minutes));
        batch.set(lockDoc, {
           'is_locked': false,
-          'end_time': Timestamp.fromDate(unlockedUntil), // Use end_time as "snoozed until"
+          'unlocked_at': Timestamp.fromDate(unlockedUntil), // Use unlocked_at as "snoozed until"
        }, SetOptions(merge: true));
     }
 

@@ -89,25 +89,57 @@ Future<void> onStart(ServiceInstance service) async {
  
   service.on('stopService').listen((_) => service.stopSelf());
 
-
-  await _sendHeartbeat(service);
-
-  // Screen Time Lock Enforcement
   final prefs = await SharedPreferences.getInstance();
   final deviceId = prefs.getString('device_id');
-  
-  if (deviceId != null) {
-    Timer.periodic(const Duration(seconds: 10), (_) async {
-      await _checkScreenTimeLock(deviceId);
-    });
-    // Initial check
-    await _checkScreenTimeLock(deviceId);
-  }
+  if (deviceId == null) return;
 
-  // Then every 10 minutes
+  bool isCurrentlyLocked = false;
+  bool isManualLock = false;
+
+  // ── 1. Listen for Lock State changes (Instant response) ─────────────────
+  FirebaseFirestore.instance
+      .collection('screen_time_locks')
+      .doc(deviceId)
+      .snapshots()
+      .listen((snap) {
+    if (snap.exists) {
+      final lock = ScreenTimeLock.fromFirestore(snap);
+      isCurrentlyLocked = lock.isLocked;
+      isManualLock = lock.unlockedAt == null;
+      _checkScreenTimeLock(deviceId);
+    }
+  });
+
+  // ── 2. Listen for Schedule changes ─────────────────────────────────────
+  FirebaseFirestore.instance
+      .collection('screen_time_schedules')
+      .where('device_id', isEqualTo: deviceId)
+      .snapshots()
+      .listen((_) {
+    _checkScreenTimeLock(deviceId);
+  });
+
+  // ── 3. High-frequency Foreground Enforcement (Every 3 seconds) ─────────
+  Timer.periodic(const Duration(seconds: 3), (_) async {
+    if (isCurrentlyLocked) {
+      await _enforceForegroundIfLocked(deviceId, isManualLock: isManualLock);
+    }
+  });
+
+  // ── 4. Periodic Schedule Check (Every 15 seconds) ──────────────────────
+  // Schedules are time-based, so we must check them even if Firestore hasn't changed.
+  Timer.periodic(const Duration(seconds: 15), (_) async {
+    await _checkScreenTimeLock(deviceId);
+  });
+
+  // ── 5. Heartbeat & Stats (Every 10 minutes) ────────────────────────────
   Timer.periodic(const Duration(minutes: 10), (_) async {
     await _sendHeartbeat(service);
   });
+
+  // Initial checks
+  await _sendHeartbeat(service);
+  await _checkScreenTimeLock(deviceId);
 }
 
 Future<void> _sendHeartbeat(ServiceInstance service) async {
@@ -419,14 +451,33 @@ Future<void> _checkScreenTimeLock(String deviceId) async {
          'unlocked_at': FieldValue.delete(),
       }, SetOptions(merge: true));
     } else if (lock.isLocked) {
-      // If it's already correctly locked, just annoy them by bringing to foreground.
-      // Don't physically shut down the screen again, otherwise they can't even tap Request More Time.
+      // If it's already correctly locked, ensure it's in foreground.
       _bringAppToForeground(hardwareLock: false);
     }
 
   } catch (e) {
     debugPrint('BACKGROUND_SVC: ScreenTime error = $e');
   }
+}
+
+Future<void> _enforceForegroundIfLocked(String deviceId, {required bool isManualLock}) async {
+  try {
+    // If it is locked, we want to ensure SafeChild is the top app.
+    // We can check the current top app using usage_stats.
+    final now = DateTime.now();
+    final start = now.subtract(const Duration(seconds: 10));
+    final stats = await UsageStats.queryUsageStats(start, now);
+    
+    if (stats != null && stats.isNotEmpty) {
+      stats.sort((a, b) => b.lastTimeUsed!.compareTo(a.lastTimeUsed!));
+      final topApp = stats.first.packageName;
+      
+      if (topApp != 'com.safechild.safechild') {
+        debugPrint('BACKGROUND_SVC: Locked but top app is $topApp. Bringing SafeChild back.');
+        _bringAppToForeground(hardwareLock: isManualLock); // Hardware lock if manual
+      }
+    }
+  } catch (_) {}
 }
 
 void _bringAppToForeground({bool hardwareLock = false}) async {

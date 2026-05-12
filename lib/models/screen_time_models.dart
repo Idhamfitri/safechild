@@ -52,24 +52,41 @@ class ScreenTimeSchedule {
       };
 
   bool contains(TimeOfDay now, int weekday) {
-    final weekdayStr = _weekdayToString(weekday);
-    if (!isActive || !days.contains(weekdayStr)) return false;
-    
+    if (!isActive) return false;
+
     int tMin = now.hour * 60 + now.minute;
-    
-    final sParts = startTime.split(':');
-    final eParts = endTime.split(':');
-    if (sParts.length != 2 || eParts.length != 2) return false;
+    int sMin = _parseTime(startTime);
+    int eMin = _parseTime(endTime);
 
-    int sMin = int.parse(sParts[0]) * 60 + int.parse(sParts[1]);
-    int eMin = int.parse(eParts[0]) * 60 + int.parse(eParts[1]);
-
-    if (eMin < sMin) {
-      // Crosses midnight
-      return tMin >= sMin || tMin <= eMin;
+    // 1. Check current day
+    if (days.contains(_weekdayToString(weekday))) {
+      if (eMin < sMin) {
+        // Crosses midnight: active from start until 23:59 OR from 00:00 until end
+        if (tMin >= sMin || tMin < eMin) return true;
+      } else {
+        // Normal range
+        if (tMin >= sMin && tMin < eMin) return true;
+      }
     }
-    return tMin >= sMin && tMin < eMin;
+
+    // 2. Check previous day (for schedules that started yesterday and crossed midnight into today)
+    int prevWeekday = weekday == 1 ? 7 : weekday - 1;
+    if (days.contains(_weekdayToString(prevWeekday))) {
+      if (eMin < sMin) {
+        // If yesterday's schedule crossed midnight, it is active today from 00:00 until eMin
+        if (tMin < eMin) return true;
+      }
+    }
+
+    return false;
   }
+
+  int _parseTime(String time) {
+    final parts = time.split(':');
+    if (parts.length != 2) return 0;
+    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+  }
+
   static String _weekdayToString(int weekday) {
     const daysMap = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
     if (weekday >= 1 && weekday <= 7) return daysMap[weekday - 1];
