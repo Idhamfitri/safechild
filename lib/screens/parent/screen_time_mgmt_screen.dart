@@ -75,8 +75,9 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
   }
 
   Widget _buildLockToggle(ScreenTimeLock lock) {
-    final isLocked = lock.isLocked && lock.unlockedAt == null;
+    final isManualLock = lock.isLocked && lock.unlockedAt == null;
     final isScheduleActive = lock.isLocked && lock.unlockedAt != null;
+    final isLocked = lock.isLocked; // True if locked by ANY reason
 
     return Center(
       child: Column(
@@ -87,14 +88,14 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
               if (isScheduleActive) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text("Device is already locked by a schedule."),
+                    content: Text("Device is already locked by a schedule. Turn off the schedule to unlock."),
                     backgroundColor: Colors.orange,
                     behavior: SnackBarBehavior.floating,
                   )
                 );
                 return;
               }
-              _service.setManualLock(widget.deviceId, !isLocked);
+              _service.setManualLock(widget.deviceId, !isManualLock);
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 300),
@@ -127,7 +128,9 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
           ),
           const SizedBox(height: 20),
           Text(
-            isLocked ? 'MANUAL LOCK ACTIVE' : 'TAP TO LOCK',
+            isScheduleActive 
+                ? 'SCHEDULE LOCK ACTIVE' 
+                : (isLocked ? 'MANUAL LOCK ACTIVE' : 'TAP TO LOCK'),
             style: TextStyle(
               fontSize: 16, 
               fontWeight: FontWeight.bold,
@@ -136,6 +139,7 @@ class _ScreenTimeMgmtScreenState extends State<ScreenTimeMgmtScreen> {
             ),
           ),
           const SizedBox(height: 10),
+
         ],
       ),
     );

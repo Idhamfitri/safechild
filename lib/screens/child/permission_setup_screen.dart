@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../services/native_channel_service.dart';
 import '../../services/pairing_service.dart';
 import '../../utils/app_theme.dart';
 import '../auth/register_screen.dart';
@@ -137,7 +136,10 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen>
       if (!mounted) return;
       final ls = doc.data()?['link_status']    as String?;
       final ps = doc.data()?['pairing_status'] as String?;
-      if (ls == 'removed' || ps == 'expired') _kickOut();
+      if (ls == 'removed' || ps == 'expired') {
+        debugPrint('PERM_SETUP: Link removed. Redirecting...');
+        _kickOut();
+      }
     });
   }
 
@@ -213,21 +215,20 @@ class _PermissionSetupScreenState extends State<PermissionSetupScreen>
       switch (_steps[_current].type) {
 
         case _PermType.notification:
-          _waitingForSettings = true;
-          AndroidIntent(
-            action: 'android.settings.APP_NOTIFICATION_SETTINGS',
-            arguments: <String, dynamic>{
-              'android.provider.extra.APP_PACKAGE': 'com.safechild.safechild',
-            },
-          ).launch();
+          final status = await Permission.notification.request();
+          if (status.isGranted) {
+            _applyStatus(_current, _StepStatus.granted);
+          } else if (status.isPermanentlyDenied) {
+            _waitingForSettings = true;
+            await openAppSettings();
+          } else {
+            _applyStatus(_current, _StepStatus.denied);
+          }
           break;
 
         case _PermType.systemAlertWindow:
-          // Must go to system settings — set flag to recheck on return
           _waitingForSettings = true;
-          const AndroidIntent(
-            action: 'android.settings.action.MANAGE_OVERLAY_PERMISSION',
-          ).launch();
+          await Permission.systemAlertWindow.request();
           break;
 
         case _PermType.usageAccess:

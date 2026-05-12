@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/app_utils.dart';
 
 class BypassDetectionService {
   static StreamSubscription? _subscription;
@@ -57,6 +58,13 @@ class BypassDetectionService {
   Future<void> start() async {
     if (_subscription != null) {
       debugPrint('BYPASS: already running, ignoring start request');
+      return;
+    }
+
+    // GUARD: Check permission before starting stream
+    final isEnabled = await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+    if (isEnabled != true) {
+      debugPrint('BYPASS: Accessibility not granted. Aborting stream start.');
       return;
     }
 

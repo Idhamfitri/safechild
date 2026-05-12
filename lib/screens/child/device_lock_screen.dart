@@ -45,40 +45,30 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
   void _showRequestDialog() {
     final reasonController = TextEditingController();
     
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-          top: 24,
-          left: 24,
-          right: 24,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Request Extra Time',
+          style: TextStyle(fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
         ),
-        child: Column(
+        content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'Request Extra Time',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
             TextField(
               controller: reasonController,
               decoration: const InputDecoration(
-                labelText: 'Reason for extension (Required)',
+                labelText: 'Reason for extension',
                 hintText: 'e.g. Finishing homework...',
                 border: OutlineInputBorder(),
               ),
               maxLines: 2,
             ),
             const SizedBox(height: 20),
-            const Text('Select Time:', style: TextStyle(fontWeight: FontWeight.bold)),
+            const Text('Select Duration:', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -90,6 +80,12 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+        ],
       ),
     );
   }
@@ -99,6 +95,7 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
       style: ElevatedButton.styleFrom(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
       onPressed: () {
         final reason = controller.text.trim();
@@ -108,12 +105,13 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
           );
           return;
         }
-        Navigator.pop(context);
+        Navigator.pop(context); // Close the dialog
         _requestTime(minutes, reason);
       },
       child: Text('$minutes min'),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {

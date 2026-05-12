@@ -52,9 +52,6 @@ dependencies:
   # firebase_storage: 13.0.6
   # firebase_ai: 3.6.1
 
- # Gemini AI classification
-  google_generative_ai: ^0.4.0
-
 
   # Battery level 
   battery_plus: ^6.0.1

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/app_utils.dart';
 
 class ContentDetectionService {
   // Use gemini-1.5-flash for the best balance of speed and cost
@@ -64,6 +65,13 @@ class ContentDetectionService {
 
   Future<void> start() async {
     if (_accessibilitySubscription != null) return;
+
+    // GUARD: Check permission before starting stream
+    final isEnabled = await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+    if (isEnabled != true) {
+      debugPrint('SAFECHILD: Accessibility not granted. Aborting stream start.');
+      return;
+    }
 
     final prefs = await SharedPreferences.getInstance();
     _deviceId = prefs.getString('device_id');
@@ -273,7 +281,7 @@ Text: "$text"
     _lastHarmfulTime[app] = DateTime.now();
     
     _logIncident(
-      summary: 'Toxic content in ${_friendlyAppName(app)}',
+      summary: 'Toxic content in ${AppUtils.getFriendlyAppName(app)}',
       description: content,
       source: app,
       confidence: conf,
@@ -286,27 +294,6 @@ Text: "$text"
   // Helpers
   // ─────────────────────────────────────────────────────────────────────
 
-  String _friendlyAppName(String pkg) {
-    if (pkg.contains('whatsapp'))  return 'WhatsApp';
-    if (pkg.contains('chrome'))    return 'Chrome';
-    if (pkg.contains('instagram')) return 'Instagram';
-    if (pkg.contains('trill') || pkg.contains('tiktok')) return 'TikTok';
-    if (pkg.contains('telegram'))  return 'Telegram';
-    if (pkg.contains('youtube'))   return 'YouTube';
-    if (pkg.contains('facebook')) {
-      if (pkg.contains('orca')) return 'Messenger';
-      return 'Facebook';
-    }
-    if (pkg.contains('twitter') || pkg.contains('x.com')) return 'X / Twitter';
-    if (pkg.contains('snapchat'))  return 'Snapchat';
-    if (pkg.contains('discord'))   return 'Discord';
-    if (pkg.contains('reddit'))    return 'Reddit';
-    
-    final parts = pkg.split('.');
-    return parts.isNotEmpty
-        ? parts.last[0].toUpperCase() + parts.last.substring(1)
-        : pkg;
-  }
 
   Future<void> _logIncident({
     required String summary,

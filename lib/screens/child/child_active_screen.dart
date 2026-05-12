@@ -8,8 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/background_service.dart';
 import '../../services/content_detection_service.dart';
 import '../../services/bypass_detection_service.dart';
-import '../../services/native_channel_service.dart';
 import '../../utils/app_theme.dart';
+import '../../utils/app_utils.dart';
 import '../auth/register_screen.dart';
 import 'package:pinput/pinput.dart';
 import '../../services/pairing_service.dart';
@@ -41,6 +41,11 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
 
   final _detectionService = ContentDetectionService();
   final _bypassService    = BypassDetectionService();
+
+  Timer? _linkDebounce;
+  Timer? _deviceDebounce;
+  Timer? _monitoringDebounce;
+  Timer? _screenTimeDebounce;
 
   @override
   void initState() {
@@ -95,25 +100,21 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
         .where('device_id', isEqualTo: _deviceId)
         .snapshots()
         .listen((snap) async {
-      if (!mounted) return;
+      if (_linkDebounce?.isActive ?? false) _linkDebounce!.cancel();
+      _linkDebounce = Timer(const Duration(milliseconds: 500), () {
+        if (!mounted) return;
 
-      // In-memory filter to avoid composite index requirements
-      final activeLinks = snap.docs.where((doc) {
-        final data = doc.data();
-        return data['link_status'] == 'active' && data['pairing_status'] != 'expired';
-      }).toList();
+        // In-memory filter to avoid composite index requirements
+        final activeLinks = snap.docs.where((doc) {
+          final data = doc.data();
+          return data['link_status'] == 'active' && data['pairing_status'] != 'expired';
+        }).toList();
 
-      // If active parents drop to 0, unlock the device admin and sign out
-      if (activeLinks.isEmpty) {
-        debugPrint('CHILD_ACTIVE: No active parents remain. Removing Device Admin and logging out.');
-        
-        try {
-          // Voluntarily drop the Android Uninstall Protection (fire-and-forget to prevent MethodChannel hang)
-          DevicePolicyManager.removeActiveAdmin();
-        } catch (_) {}
-        
-        _forceLogout();
-      }
+        // If active parents drop to 0, unlock the device admin and sign out
+        if (activeLinks.isEmpty) {
+          _forceLogout();
+        }
+      });
     }, onError: (_) {});
 
     // Listen for Remote Settings
@@ -122,28 +123,31 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
         .doc(_deviceId)
         .snapshots()
         .listen((snap) async {
-      if (!mounted || !snap.exists) return;
-      final data = snap.data() ?? {};
-      final settings = data['settings'] as Map<String, dynamic>? ?? {};
+      if (_deviceDebounce?.isActive ?? false) _deviceDebounce!.cancel();
+      _deviceDebounce = Timer(const Duration(milliseconds: 500), () async {
+        if (!mounted || !snap.exists) return;
+        final data = snap.data() ?? {};
+        final settings = data['settings'] as Map<String, dynamic>? ?? {};
 
-      // Trigger Permission Setup
-      final triggerSetup = settings['trigger_setup'] ?? false;
-      if (triggerSetup) {
-        // Clear flag immediately so it doesn't loop
-        try {
-          await FirebaseFirestore.instance
-              .collection('child_devices')
-              .doc(_deviceId)
-              .update({'settings.trigger_setup': false});
-        } catch (_) {}
+        // Trigger Permission Setup
+        final triggerSetup = settings['trigger_setup'] ?? false;
+        if (triggerSetup) {
+          // Clear flag immediately so it doesn't loop
+          try {
+            await FirebaseFirestore.instance
+                .collection('child_devices')
+                .doc(_deviceId)
+                .update({'settings.trigger_setup': false});
+          } catch (_) {}
 
-        if (mounted) {
-          Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => PermissionSetupScreen()),
-              (_) => false);
+          if (mounted) {
+            Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => PermissionSetupScreen()),
+                (_) => false);
+          }
         }
-      }
+      });
     }, onError: (_) {});
 
     // Listen for Monitoring Settings (from Parent)
@@ -152,26 +156,29 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
         .doc(_linkId)
         .snapshots()
         .listen((snap) async {
-      if (!mounted || !snap.exists) return;
-      final data = snap.data() ?? {};
+      if (_monitoringDebounce?.isActive ?? false) _monitoringDebounce!.cancel();
+      _monitoringDebounce = Timer(const Duration(milliseconds: 500), () async {
+        if (!mounted || !snap.exists) return;
+        final data = snap.data() ?? {};
 
-      final offlineMode = data['offline_mode'] ?? false;
-      
-      // Bypass
-      final bypassEnabled = !offlineMode && (data['bypass_detection_enabled'] ?? true);
-      if (bypassEnabled) {
-        await _bypassService.start();
-      } else {
-        await _bypassService.stop();
-      }
+        final offlineMode = data['offline_mode'] ?? false;
+        
+        // Bypass
+        final bypassEnabled = !offlineMode && (data['bypass_detection_enabled'] ?? true);
+        if (bypassEnabled) {
+          await _bypassService.start();
+        } else {
+          await _bypassService.stop();
+        }
 
-      // Content Detection
-      final contentEnabled = !offlineMode && (data['content_monitoring_enabled'] ?? true);
-      if (contentEnabled) {
-        await _detectionService.start();
-      } else {
-        await _detectionService.stop();
-      }
+        // Content Detection
+        final contentEnabled = !offlineMode && (data['content_monitoring_enabled'] ?? true);
+        if (contentEnabled) {
+          await _detectionService.start();
+        } else {
+          await _detectionService.stop();
+        }
+      });
     }, onError: (_) {});
     
     // Listen for Screen Time Configuration Lock State
@@ -180,19 +187,22 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
         .doc(_deviceId)
         .snapshots()
         .listen((snap) {
-       if (!mounted || !snap.exists) return;
-       final lock = ScreenTimeLock.fromFirestore(snap);
-       
-       bool isLocked = lock.isLocked;
-       
-       setState(() {
-         _isLocked = isLocked;
-         _isManualLock = lock.unlockedAt == null;
-         _lockReason = _isManualLock ? 'Device is manually locked by parent' : 'Device is being locked';
-       });
-       
-       // Update bypass service state for active enforcement
-       _bypassService.setLocked(isLocked);
+      if (_screenTimeDebounce?.isActive ?? false) _screenTimeDebounce!.cancel();
+      _screenTimeDebounce = Timer(const Duration(milliseconds: 500), () {
+         if (!mounted || !snap.exists) return;
+         final lock = ScreenTimeLock.fromFirestore(snap);
+         
+         bool isLocked = lock.isLocked;
+         
+         setState(() {
+           _isLocked = isLocked;
+           _isManualLock = lock.unlockedAt == null;
+           _lockReason = _isManualLock ? 'Device is manually locked by parent' : 'Device is being locked';
+         });
+         
+         // Update bypass service state for active enforcement
+         _bypassService.setLocked(isLocked);
+      });
     }, onError: (_) {});
   }
 

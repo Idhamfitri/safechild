@@ -13,15 +13,12 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usage_stats/usage_stats.dart';
 import 'package:flutter/foundation.dart';
-import 'native_channel_service.dart';
-import '../models/screen_time_models.dart';
 import 'package:flutter/material.dart';
-import 'package:safechild/models/screen_time_models.dart';
-import 'package:safechild/services/native_channel_service.dart';
 import 'package:installed_apps/installed_apps.dart';
-import 'package:installed_apps/app_info.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
+import '../models/screen_time_models.dart';
+import '../utils/app_utils.dart';
 
 const _kNotifChannelId   = 'safechild_monitoring';
 const _kNotifChannelName = 'SafeChild Monitoring';
@@ -77,24 +74,54 @@ class BackgroundServiceManager {
 
 @pragma('vm:entry-point')
 Future<void> onStart(ServiceInstance service) async {
+  // 1. Ensure flutter bindings are available in this isolate
+  WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
 
-  // Init Firebase in this isolate
+  // 2. Init Firebase in this isolate
   try {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp();
     }
   } catch (_) {}
 
- 
-  service.on('stopService').listen((_) => service.stopSelf());
+  debugPrint('BACKGROUND_SVC: Service started in background isolate');
+  
+  service.on('stopService').listen((_) {
+    debugPrint('BACKGROUND_SVC: Stopping service...');
+    service.stopSelf();
+  });
 
   final prefs = await SharedPreferences.getInstance();
   final deviceId = prefs.getString('device_id');
-  if (deviceId == null) return;
+  if (deviceId == null) {
+    debugPrint('BACKGROUND_SVC: No device ID found, stopping.');
+    service.stopSelf();
+    return;
+  }
 
   bool isCurrentlyLocked = false;
   bool isManualLock = false;
+
+  Timer? _unlinkDebounce;
+  Timer? _lockDebounce;
+  Timer? _schedDebounce;
+
+  // ── 0. Listen for Unlink (Instant removal) ───────────────────────────
+  FirebaseFirestore.instance
+      .collection('parent_child_links')
+      .where('device_id', isEqualTo: deviceId)
+      .snapshots()
+      .listen((snap) {
+    if (_unlinkDebounce?.isActive ?? false) _unlinkDebounce!.cancel();
+    _unlinkDebounce = Timer(const Duration(milliseconds: 500), () {
+      final active = snap.docs.any((d) => d.data()['link_status'] == 'active');
+      if (!active) {
+        debugPrint('BACKGROUND_SVC: No active links. Deactivating instantly.');
+        service.stopSelf();
+      }
+    });
+  });
 
   // ── 1. Listen for Lock State changes (Instant response) ─────────────────
   FirebaseFirestore.instance
@@ -102,12 +129,15 @@ Future<void> onStart(ServiceInstance service) async {
       .doc(deviceId)
       .snapshots()
       .listen((snap) {
-    if (snap.exists) {
-      final lock = ScreenTimeLock.fromFirestore(snap);
-      isCurrentlyLocked = lock.isLocked;
-      isManualLock = lock.unlockedAt == null;
-      _checkScreenTimeLock(deviceId);
-    }
+    if (_lockDebounce?.isActive ?? false) _lockDebounce!.cancel();
+    _lockDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (snap.exists) {
+        final lock = ScreenTimeLock.fromFirestore(snap);
+        isCurrentlyLocked = lock.isLocked;
+        isManualLock = lock.unlockedAt == null;
+        _checkScreenTimeLock(deviceId);
+      }
+    });
   });
 
   // ── 2. Listen for Schedule changes ─────────────────────────────────────
@@ -116,7 +146,10 @@ Future<void> onStart(ServiceInstance service) async {
       .where('device_id', isEqualTo: deviceId)
       .snapshots()
       .listen((_) {
-    _checkScreenTimeLock(deviceId);
+    if (_schedDebounce?.isActive ?? false) _schedDebounce!.cancel();
+    _schedDebounce = Timer(const Duration(milliseconds: 500), () {
+      _checkScreenTimeLock(deviceId);
+    });
   });
 
   // ── 3. High-frequency Foreground Enforcement (Every 3 seconds) ─────────
@@ -127,7 +160,6 @@ Future<void> onStart(ServiceInstance service) async {
   });
 
   // ── 4. Periodic Schedule Check (Every 15 seconds) ──────────────────────
-  // Schedules are time-based, so we must check them even if Firestore hasn't changed.
   Timer.periodic(const Duration(seconds: 15), (_) async {
     await _checkScreenTimeLock(deviceId);
   });
@@ -153,7 +185,7 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
     final db  = FirebaseFirestore.instance;
     final now = DateTime.now();
 
-    // Battery level — works fine in background isolate
+    // Battery level
     int? batteryLevel;
     try { batteryLevel = await Battery().batteryLevel; } catch (_) {}
 
@@ -173,16 +205,14 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
       debugPrint('BACKGROUND_SVC: Heartbeat Firestore write failed: $e');
     }
 
-    // Write today's usage stats to screen_time/{deviceId}/daily/{date}
+    // Write today's usage stats
     try {
       await _writeUsageStats(db, deviceId, now);
     } catch (e) {
       debugPrint('BACKGROUND_SVC: Usage stats Firestore write failed: $e');
     }
 
-    // ── Re-check permissions from background isolate ────────────
-    // Note: Only usage_access and device_admin can be checked here.
-    // Accessibility & overlay require main isolate (MethodChannel).
+    // ── Re-check permissions 
     bool? usageAccess;
     bool? deviceAdmin;
     try { 
@@ -220,15 +250,12 @@ Future<void> _sendHeartbeat(ServiceInstance service) async {
 Future<void> _writeUsageStats(
     FirebaseFirestore db, String deviceId, DateTime now) async {
   try {
-    // ── Check permission first using usage_stats package ─────────────────
-    // This works in background isolate unlike MethodChannel
     final hasPermission = await UsageStats.checkUsagePermission() ?? false;
     if (!hasPermission) {
       debugPrint('BACKGROUND_SVC: usage access not granted — skipping stats');
       return;
     }
 
-    // ── Query today's usage directly via usage_stats package ─────────────
     final startOfDay = DateTime(now.year, now.month, now.day);
     final rawStats   = await UsageStats.queryUsageStats(startOfDay, now);
 
@@ -237,7 +264,6 @@ Future<void> _writeUsageStats(
       return;
     }
 
-    // ── Filter and map to app usage list ──────────────────────────────────
     final List<Map<String, dynamic>> apps = [];
     for (var s in rawStats) {
       if (s.packageName != null &&
@@ -248,9 +274,8 @@ Future<void> _writeUsageStats(
         final usageMs      = int.parse(s.totalTimeInForeground!);
         final usageMinutes = (usageMs / 60000).round();
         final packageName  = s.packageName!;
-        final appName      = _friendlyAppName(packageName);
+        final appName      = AppUtils.getFriendlyAppName(packageName);
 
-        // Fetch icon memory
         String iconBase64 = '';
         try {
            final appInfo = await InstalledApps.getAppInfo(packageName);
@@ -276,12 +301,10 @@ Future<void> _writeUsageStats(
       return;
     }
 
-    // ── Take top 10 most used apps ────────────────────────────────────────
     final topApps      = apps.take(10).toList();
     final totalMinutes = topApps.fold<int>(
         0, (sum, a) => sum + (a['usage_minutes'] as int));
 
-    // ── Group unimportant apps into "Other" ───────────────────────────────
     final importantApps = ['WhatsApp', 'Chrome', 'Instagram', 'TikTok', 'Telegram', 'YouTube', 'Facebook', 'Messenger', 'X / Twitter', 'Snapchat', 'Discord', 'Reddit', 'Netflix', 'Spotify'];
     final filteredApps = <Map<String, dynamic>>[];
     int totalOtherMinutes = 0;
@@ -306,7 +329,6 @@ Future<void> _writeUsageStats(
     final dateKey = DateFormat('yyyy-MM-dd').format(now);
     final docRef = db.collection('screen_time').doc(deviceId).collection('daily').doc(dateKey);
 
-    // ── Hourly Delta Tracking ─────────────────────────────────────────────
     List<int> hourlyTotals = List.filled(24, 0);
     int previousTotal = 0;
 
@@ -327,7 +349,6 @@ Future<void> _writeUsageStats(
       hourlyTotals[now.hour] += deltaMinutes;
     }
 
-    // ── Write to screen_time/{deviceId}/daily/{date} ──────────────────────
     await docRef.set({
       'device_id':     deviceId,
       'date':          dateKey,
@@ -337,7 +358,6 @@ Future<void> _writeUsageStats(
       'apps':          filteredApps,
     });
 
-    // ── Also write most recent app separately for quick access ────────────
     if (topApps.isNotEmpty) {
       await db.collection('child_devices').doc(deviceId).set({
         'recent_apps': topApps.take(5).map((a) => {
@@ -350,47 +370,21 @@ Future<void> _writeUsageStats(
       }, SetOptions(merge: true));
     }
 
-    debugPrint('BACKGROUND_SVC: usage stats written — $totalMinutes min total, ${topApps.length} apps ✓');
+    debugPrint('BACKGROUND_SVC: usage stats written — $totalMinutes min total ✓');
   } catch (e) {
     debugPrint('BACKGROUND_SVC: _writeUsageStats error — $e');
   }
-}
-
-// ── Friendly app name helper ──────────────────────────────────────────────
-String _friendlyAppName(String packageName) {
-  if (packageName.contains('whatsapp'))  return 'WhatsApp';
-  if (packageName.contains('chrome'))    return 'Chrome';
-  if (packageName.contains('instagram')) return 'Instagram';
-  if (packageName.contains('tiktok') || packageName.contains('trill')) return 'TikTok';
-  if (packageName.contains('telegram'))  return 'Telegram';
-  if (packageName.contains('youtube'))   return 'YouTube';
-  if (packageName.contains('facebook')) {
-    if (packageName.contains('orca')) return 'Messenger';
-    return 'Facebook';
-  }
-  if (packageName.contains('twitter') || packageName.contains('x.com')) return 'X / Twitter';
-  if (packageName.contains('snapchat'))  return 'Snapchat';
-  if (packageName.contains('discord'))   return 'Discord';
-  if (packageName.contains('reddit'))    return 'Reddit';
-  if (packageName.contains('netflix'))   return 'Netflix';
-  if (packageName.contains('spotify'))   return 'Spotify';
-  final parts = packageName.split('.');
-  return parts.isNotEmpty
-      ? parts.last[0].toUpperCase() + parts.last.substring(1)
-      : packageName;
 }
 
 Future<void> _checkScreenTimeLock(String deviceId) async {
   try {
     final db = FirebaseFirestore.instance;
     
-    // 1. Get current lock state
     final lockDoc = await db.collection('screen_time_locks').doc(deviceId).get();
     final lock = lockDoc.exists 
         ? ScreenTimeLock.fromFirestore(lockDoc)
         : ScreenTimeLock(lockId: deviceId, deviceId: deviceId, isLocked: false);
         
-    // 2. Get active schedules
     final schedDocs = await db.collection('screen_time_schedules')
         .where('device_id', isEqualTo: deviceId)
         .where('is_active', isEqualTo: true)
@@ -412,20 +406,16 @@ Future<void> _checkScreenTimeLock(String deviceId) async {
       }
     }
     
-    // If we have an active "snooze" period (approved time extension), it overrides the schedule lock temporarily
     if (shouldBeLockedBySchedule && !lock.isLocked && lock.unlockedAt != null && lock.unlockedAt!.isAfter(now)) {
       shouldBeLockedBySchedule = false;
     }
     
-    // Evaluate transitions
     if (lock.isLocked && lock.unlockedAt == null) {
-      // Parent manual lock supersedes everything. Do not unlock it automatically.
       _bringAppToForeground(hardwareLock: true);
       return;
     }
     
     if (shouldBeLockedBySchedule && (!lock.isLocked || lock.unlockedAt == null)) {
-      // Find the end time of the active schedule to set unlocked_at
       DateTime? scheduleEndTime;
       if (activeSchedule != null) {
          final eParts = activeSchedule.endTime.split(':');
@@ -435,23 +425,19 @@ Future<void> _checkScreenTimeLock(String deviceId) async {
          }
       }
 
-      // Transition to Schedule Lock
       await db.collection('screen_time_locks').doc(deviceId).set({
         'device_id': deviceId,
         'is_locked': true,
         'start_time': FieldValue.serverTimestamp(),
         if (scheduleEndTime != null) 'unlocked_at': Timestamp.fromDate(scheduleEndTime),
       }, SetOptions(merge: true));
-      // First time catching them with schedule -> hardware lock
       _bringAppToForeground(hardwareLock: true);
     } else if (!shouldBeLockedBySchedule && lock.isLocked && lock.unlockedAt != null) {
-      // Transition to Unlock (Schedule over)
       await db.collection('screen_time_locks').doc(deviceId).set({
          'is_locked': false,
          'unlocked_at': FieldValue.delete(),
       }, SetOptions(merge: true));
     } else if (lock.isLocked) {
-      // If it's already correctly locked, ensure it's in foreground.
       _bringAppToForeground(hardwareLock: false);
     }
 
@@ -462,8 +448,6 @@ Future<void> _checkScreenTimeLock(String deviceId) async {
 
 Future<void> _enforceForegroundIfLocked(String deviceId, {required bool isManualLock}) async {
   try {
-    // If it is locked, we want to ensure SafeChild is the top app.
-    // We can check the current top app using usage_stats.
     final now = DateTime.now();
     final start = now.subtract(const Duration(seconds: 10));
     final stats = await UsageStats.queryUsageStats(start, now);
@@ -474,7 +458,7 @@ Future<void> _enforceForegroundIfLocked(String deviceId, {required bool isManual
       
       if (topApp != 'com.safechild.safechild') {
         debugPrint('BACKGROUND_SVC: Locked but top app is $topApp. Bringing SafeChild back.');
-        _bringAppToForeground(hardwareLock: isManualLock); // Hardware lock if manual
+        _bringAppToForeground(hardwareLock: isManualLock);
       }
     }
   } catch (_) {}
@@ -483,9 +467,7 @@ Future<void> _enforceForegroundIfLocked(String deviceId, {required bool isManual
 void _bringAppToForeground({bool hardwareLock = false}) async {
   try {
      if (hardwareLock) {
-         // Brutally turns off the OS screen requiring PIN/Pattern to wake
          await DevicePolicyManager.lockNow();
-         // Give OS 500ms to settle off before we spawn the foreground intent
          await Future.delayed(const Duration(milliseconds: 500));
      }
 
@@ -498,7 +480,6 @@ void _bringAppToForeground({bool hardwareLock = false}) async {
       await intent.launch();
   } catch (_) {}
 }
-
 
 String _formatTime(DateTime dt) {
   final h = dt.hour.toString().padLeft(2, '0');
