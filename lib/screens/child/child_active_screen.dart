@@ -6,7 +6,7 @@ import 'package:flutter_accessibility_service/flutter_accessibility_service.dart
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/background_service.dart';
-import '../../services/content_detection_service.dart';
+import '../../services/content_detection_service_v1.dart';
 import '../../services/bypass_detection_service.dart';
 import '../../services/native_channel_service.dart';
 import '../../utils/app_theme.dart';
@@ -39,7 +39,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
   String _lockReason = 'Device Locked';
   bool _isManualLock = false;
 
-  final _detectionService = ContentDetectionService();
+  final _detectionService = ContentDetectionServiceV1();
   final _bypassService    = BypassDetectionService();
 
   @override

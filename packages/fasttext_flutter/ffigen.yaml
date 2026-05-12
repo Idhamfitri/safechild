@@ -1,0 +1,25 @@
+# Run with `dart run ffigen --config ffigen.yaml`.
+# This generates Dart FFI bindings from the C wrapper header.
+name: FasttextFlutterBindings
+description: |
+  Bindings for `src/fasttext_api.h`.
+
+  Regenerate bindings with `dart run ffigen --config ffigen.yaml`.
+
+output: 'lib/src/fasttext_flutter_bindings_generated.dart'
+
+headers:
+  entry-points:
+    - 'src/fasttext_api.h'
+  include-directives:
+    - 'src/fasttext_api.h'
+
+ffi-native:
+
+comments:
+  style: any
+  length: full
+
+# Rename opaque struct pointer to a friendlier internal name
+typedef-map:
+  'FastTextHandle': Pointer<Void>
