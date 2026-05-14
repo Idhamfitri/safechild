@@ -103,25 +103,8 @@ Future<void> onStart(ServiceInstance service) async {
   bool isCurrentlyLocked = false;
   bool isManualLock = false;
 
-  Timer? _unlinkDebounce;
-  Timer? _lockDebounce;
-  Timer? _schedDebounce;
-
-  // ── 0. Listen for Unlink (Instant removal) ───────────────────────────
-  FirebaseFirestore.instance
-      .collection('parent_child_links')
-      .where('device_id', isEqualTo: deviceId)
-      .snapshots()
-      .listen((snap) {
-    if (_unlinkDebounce?.isActive ?? false) _unlinkDebounce!.cancel();
-    _unlinkDebounce = Timer(const Duration(milliseconds: 500), () {
-      final active = snap.docs.any((d) => d.data()['link_status'] == 'active');
-      if (!active) {
-        debugPrint('BACKGROUND_SVC: No active links. Deactivating instantly.');
-        service.stopSelf();
-      }
-    });
-  });
+  // The unlink listener has been moved entirely to the UI isolate (ChildActiveScreen)
+  // to ensure navigation and service cancellation happens in a coordinated way.
 
   // ── 1. Listen for Lock State changes (Instant response) ─────────────────
   FirebaseFirestore.instance
@@ -129,15 +112,12 @@ Future<void> onStart(ServiceInstance service) async {
       .doc(deviceId)
       .snapshots()
       .listen((snap) {
-    if (_lockDebounce?.isActive ?? false) _lockDebounce!.cancel();
-    _lockDebounce = Timer(const Duration(milliseconds: 500), () {
-      if (snap.exists) {
-        final lock = ScreenTimeLock.fromFirestore(snap);
-        isCurrentlyLocked = lock.isLocked;
-        isManualLock = lock.unlockedAt == null;
-        _checkScreenTimeLock(deviceId);
-      }
-    });
+    if (snap.exists) {
+      final lock = ScreenTimeLock.fromFirestore(snap);
+      isCurrentlyLocked = lock.isLocked;
+      isManualLock = lock.unlockedAt == null;
+      _checkScreenTimeLock(deviceId);
+    }
   });
 
   // ── 2. Listen for Schedule changes ─────────────────────────────────────
@@ -146,10 +126,7 @@ Future<void> onStart(ServiceInstance service) async {
       .where('device_id', isEqualTo: deviceId)
       .snapshots()
       .listen((_) {
-    if (_schedDebounce?.isActive ?? false) _schedDebounce!.cancel();
-    _schedDebounce = Timer(const Duration(milliseconds: 500), () {
-      _checkScreenTimeLock(deviceId);
-    });
+    _checkScreenTimeLock(deviceId);
   });
 
   // ── 3. High-frequency Foreground Enforcement (Every 3 seconds) ─────────

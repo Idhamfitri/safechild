@@ -96,7 +96,31 @@ class BypassDetectionService {
     }
   }
 
+  final List<AccessibilityEvent> _eventQueue = [];
+  bool _isProcessing = false;
+
   void _onEvent(AccessibilityEvent event) {
+    _eventQueue.add(event);
+    _processQueue();
+  }
+
+  Future<void> _processQueue() async {
+    if (_isProcessing) return;
+    _isProcessing = true;
+
+    while (_eventQueue.isNotEmpty) {
+      final event = _eventQueue.removeAt(0);
+      
+      // Yield to UI thread to prevent skipped frames (Choreographer lag)
+      await Future.delayed(Duration.zero);
+      
+      await _handleEvent(event);
+    }
+
+    _isProcessing = false;
+  }
+
+  Future<void> _handleEvent(AccessibilityEvent event) async {
     final pkg  = event.packageName?.toLowerCase() ?? '';
 
     // ── 1. If Locked Enforcement ──────────────────────────────────────────

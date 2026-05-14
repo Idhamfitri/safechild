@@ -59,9 +59,9 @@ class ContentDetectionService {
     'stupid', 'idiot', 'kill yourself', 'hate you', 'f*ck', 'retard', 'die'
   ];
 
-  // ─────────────────────────────────────────────────────────────────────
-  // Lifecycle
-  // ─────────────────────────────────────────────────────────────────────
+  // ── Event Queue (Anti-Lag) ───────────────────────────────────────────
+  final List<AccessibilityEvent> _eventList = [];
+  bool _isProcessing = false;
 
   Future<void> start() async {
     if (_accessibilitySubscription != null) return;
@@ -83,11 +83,34 @@ class ContentDetectionService {
 
     await Future.delayed(const Duration(seconds: 2));
 
+    // Listen to the system stream and pipe it into our sequential internal queue
     _accessibilitySubscription = FlutterAccessibilityService.accessStream.listen(
       _onAccessibilityEvent,
       onError: (e) => debugPrint('SAFECHILD: stream error — $e'),
     );
+
     debugPrint('SAFECHILD: service started for $_deviceId ✓');
+  }
+
+  void _onAccessibilityEvent(AccessibilityEvent event) {
+    _eventList.add(event);
+    _processQueue();
+  }
+
+  Future<void> _processQueue() async {
+    if (_isProcessing) return;
+    _isProcessing = true;
+
+    while (_eventList.isNotEmpty) {
+      final event = _eventList.removeAt(0);
+      
+      // Yield to UI thread immediately to prevent skipped frames (Choreographer lag)
+      await Future.delayed(Duration.zero);
+      
+      await _handleQueuedEvent(event);
+    }
+
+    _isProcessing = false;
   }
 
   Future<void> stop() async {
@@ -99,21 +122,55 @@ class ContentDetectionService {
       debugPrint('SAFECHILD: Warning - Accessibility stream de-activation error: $e');
     } finally {
       _accessibilitySubscription = null;
+      _eventList.clear();
       debugPrint('SAFECHILD: service stopped.');
     }
   }
 
   // ─────────────────────────────────────────────────────────────────────
-  // Event Handler
+  // Async Event Handler
   // ─────────────────────────────────────────────────────────────────────
 
-  void _onAccessibilityEvent(AccessibilityEvent event) {
+  Future<void> _handleQueuedEvent(AccessibilityEvent event) async {
     final sourceApp = event.packageName ?? 'unknown';
 
-    // 1. App Whitelist
+    // 1. App Whitelist (Fast check on main isolate)
     if (!_monitoredPackages.any((pkg) => sourceApp.contains(pkg))) return;
 
-    // 2. Extract and Clean Text
+    // 2. Extract and Clean Text (Heavy work)
+    // We run this inside a Future to avoid blocking the UI frame
+    final rawText = await Future(() => _extractTextFromEvent(event));
+
+    if (rawText == null || rawText.isEmpty) return;
+
+    // 3. UI Label Filter (Skip "Send", "Cancel", etc.)
+    if (_isUIText(rawText)) return;
+
+    // 4. Deduplication (Skip identical events from scrolling)
+    final now = DateTime.now();
+    if (_lastTextProcessed == rawText &&
+        _lastTextTime != null &&
+        now.difference(_lastTextTime!) < const Duration(seconds: 3)) {
+      return;
+    }
+
+    // 5. App Debounce
+    final lastTime = _lastProcessed[sourceApp];
+    if (lastTime != null && now.difference(lastTime) < _debounceDuration) {
+      return;
+    }
+
+    // Update tracking state
+    _lastProcessed[sourceApp] = now;
+    _lastTextProcessed = rawText;
+    _lastTextTime = now;
+
+    debugPrint('SAFECHILD: event from $sourceApp → "$rawText"');
+
+    await _processText(rawText, sourceApp);
+  }
+
+  String? _extractTextFromEvent(AccessibilityEvent event) {
     String? rawText;
     if (event.text != null && event.text != 'null' && event.text!.trim().isNotEmpty) {
       rawText = _cleanText(event.text!);
@@ -128,33 +185,7 @@ class ContentDetectionService {
           .join(' ');
       if (subTexts.isNotEmpty) rawText = subTexts;
     }
-
-    if (rawText == null || rawText.isEmpty) return;
-
-    // 3. UI Label Filter (Skip "Send", "Cancel", etc.)
-    if (_isUIText(rawText)) return;
-
-    // 4. Deduplication (Skip identical events from scrolling)
-    if (_lastTextProcessed == rawText &&
-        _lastTextTime != null &&
-        DateTime.now().difference(_lastTextTime!) < const Duration(seconds: 3)) {
-      return;
-    }
-
-    // 5. App Debounce
-    final lastTime = _lastProcessed[sourceApp];
-    if (lastTime != null && DateTime.now().difference(lastTime) < _debounceDuration) {
-      return;
-    }
-
-    // Update tracking state
-    _lastProcessed[sourceApp] = DateTime.now();
-    _lastTextProcessed = rawText;
-    _lastTextTime = DateTime.now();
-
-    debugPrint('SAFECHILD: event from $sourceApp → "$rawText"');
-
-    _processText(rawText, sourceApp);
+    return rawText;
   }
 
   bool _isUIText(String text) {
@@ -162,6 +193,7 @@ class ContentDetectionService {
     // Filter out patterns and very short strings (noise)
     return _uiPatterns.any((p) => lower == p || lower.length < 2);
   }
+
 
   String _cleanText(String raw) {
     // Robust extraction from Android node dumps
