@@ -126,7 +126,9 @@ class IncidentModel {
       confidenceScore: (d['confidence_score'] ?? 0.0).toDouble(),
       category:        _catFromString(d['category']),
       detectionModel:  d['detection_model']   ?? 'gemini',
-      detectedAt:      (d['detected_at'] as Timestamp).toDate(),
+      detectedAt: d['detected_at'] != null 
+          ? (d['detected_at'] as Timestamp).toDate()
+          : DateTime.now(),
       isReviewed:      d['is_reviewed']        ?? false,
       reviewedAt: d['reviewed_at'] != null
           ? (d['reviewed_at'] as Timestamp).toDate()

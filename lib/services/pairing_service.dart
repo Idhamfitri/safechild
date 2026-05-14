@@ -125,10 +125,13 @@ class PairingService {
         'setup_complete': false,
       });
 
-      // Flip link to linked
+      // Flip link to linked — also store FCM token on the link doc so
+      // the Cloud Function onLinkChange can read it from the before-snapshot
+      // even when unlinkAndDeleteAll() deletes child_devices in the same batch.
       await _links.doc(linkDoc.id).update({
-        'pairing_status': 'linked',
-        'linked_at':      Timestamp.now(),
+        'pairing_status':     'linked',
+        'linked_at':          Timestamp.now(),
+        if (fcmToken != null) 'registration_token': fcmToken,
       });
 
       return null; // success

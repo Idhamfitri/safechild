@@ -29,7 +29,7 @@ class BypassEventService {
     return _col
         .where('device_id', isEqualTo: deviceId)
         .where('detected_at',
-            isGreaterThanOrEqualTo: startOfDay.millisecondsSinceEpoch)
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
         .orderBy('detected_at', descending: true)
         .snapshots()
         .map((s) => s.docs.map(BypassEventModel.fromFirestore).toList());

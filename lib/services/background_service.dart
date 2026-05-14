@@ -1,7 +1,6 @@
 // lib/services/background_service.dart
 // Owns ALL heartbeat logic. Survives app kill, cache clear, and reboots.
 import 'dart:async';
-import 'dart:convert';
 import 'dart:ui';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -12,9 +11,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:usage_stats/usage_stats.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:installed_apps/installed_apps.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import '../models/screen_time_models.dart';
@@ -78,6 +75,18 @@ Future<void> onStart(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
 
+  // Suppress the continuous "FlutterJNI detached" warnings from the
+  // flutter_accessibility_service plugin. DartPluginRegistrant registers ALL
+  // plugins including the accessibility service, so the native
+  // AccessibilityService tries to deliver events to this background engine
+  // too. Since bypass detection only runs in the main UI isolate we register
+  // a no-op binary message handler here so the native side always finds a
+  // live receiver and never hits a detached JNI.
+  try {
+    WidgetsBinding.instance.defaultBinaryMessenger
+        .setMessageHandler('x-slayer/accessibility_event', (_) async => null);
+  } catch (_) {}
+
   // 2. Init Firebase in this isolate
   try {
     if (Firebase.apps.isEmpty) {
@@ -103,8 +112,28 @@ Future<void> onStart(ServiceInstance service) async {
   bool isCurrentlyLocked = false;
   bool isManualLock = false;
 
-  // The unlink listener has been moved entirely to the UI isolate (ChildActiveScreen)
-  // to ensure navigation and service cancellation happens in a coordinated way.
+  // ── 0. Listen for Unlink — background safety net ────────────────────────
+  // The UI isolate (ChildActiveScreen) also listens, but that listener is
+  // throttled by Android when the app is backgrounded. This listener survives
+  // in the foreground service isolate and acts as the reliable fallback.
+  FirebaseFirestore.instance
+      .collection('parent_child_links')
+      .where('device_id', isEqualTo: deviceId)
+      .snapshots()
+      .listen((snap) async {
+    final hasActive = snap.docs.any((doc) {
+      final d = doc.data();
+      return d['link_status'] == 'active' && d['pairing_status'] != 'expired';
+    });
+    if (!hasActive) {
+      debugPrint('BACKGROUND_SVC: No active links detected — stopping service.');
+      final p = await SharedPreferences.getInstance();
+      await p.remove('role');
+      await p.remove('link_id');
+      await p.remove('device_id');
+      service.stopSelf();
+    }
+  }, onError: (_) {});
 
   // ── 1. Listen for Lock State changes (Instant response) ─────────────────
   FirebaseFirestore.instance
@@ -129,8 +158,32 @@ Future<void> onStart(ServiceInstance service) async {
     _checkScreenTimeLock(deviceId);
   });
 
-  // ── 3. High-frequency Foreground Enforcement (Every 3 seconds) ─────────
+  // ── 3. High-frequency Enforcement + FCM flag poll (Every 3 seconds) ─────
+  // When Android Doze throttles the Firestore WebSocket, the FCM background
+  // handler writes flags to SharedPreferences. This timer reads them so the
+  // response time stays under 3 seconds even when backgrounded.
   Timer.periodic(const Duration(seconds: 3), (_) async {
+    final p = await SharedPreferences.getInstance();
+
+    // FCM-triggered unlink (written by _onFcmBackground in main.dart)
+    if (p.getBool('fcm_unlink_pending') == true) {
+      debugPrint('BACKGROUND_SVC: FCM unlink signal — stopping service.');
+      await p.remove('fcm_unlink_pending');
+      service.stopSelf();
+      return;
+    }
+
+    // FCM-triggered lock change
+    final fcmLock = p.get('fcm_lock_pending');
+    if (fcmLock != null) {
+      final locked = fcmLock == true;
+      debugPrint('BACKGROUND_SVC: FCM lock signal: isLocked=$locked');
+      await p.remove('fcm_lock_pending');
+      isCurrentlyLocked = locked;
+      isManualLock = p.getBool('fcm_lock_is_manual') ?? true;
+      await p.remove('fcm_lock_is_manual');
+    }
+
     if (isCurrentlyLocked) {
       await _enforceForegroundIfLocked(deviceId, isManualLock: isManualLock);
     }
@@ -253,18 +306,9 @@ Future<void> _writeUsageStats(
         final packageName  = s.packageName!;
         final appName      = AppUtils.getFriendlyAppName(packageName);
 
-        String iconBase64 = '';
-        try {
-           final appInfo = await InstalledApps.getAppInfo(packageName);
-           if (appInfo != null && appInfo.icon != null) {
-             iconBase64 = base64Encode(appInfo.icon!);
-           }
-        } catch (_) {}
-
         apps.add({
           'package_name':  packageName,
           'app_name':      appName,
-          'icon_base64':   iconBase64,
           'usage_minutes': usageMinutes,
           'usage_ms':      usageMs,
         });
@@ -340,7 +384,6 @@ Future<void> _writeUsageStats(
         'recent_apps': topApps.take(5).map((a) => {
               'package_name':  a['package_name'],
               'app_name':      a['app_name'],
-              'icon_base64':   a['icon_base64'],
               'usage_minutes': a['usage_minutes'],
             }).toList(),
         'recent_apps_updated_at': Timestamp.fromDate(now),

@@ -93,7 +93,9 @@ class BypassEventModel {
       alertSendAt: d['alert_send_at'] != null
           ? (d['alert_send_at'] as Timestamp).toDate()
           : null,
-      detectedAt: (d['detected_at'] as Timestamp).toDate(),
+      detectedAt: d['detected_at'] != null 
+          ? (d['detected_at'] as Timestamp).toDate()
+          : DateTime.now(),
     );
   }
 

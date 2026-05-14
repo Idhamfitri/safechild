@@ -1,6 +1,4 @@
 // lib/screens/auth/splash_screen.dart
-// If link_status is 'removed' or 'expired' — clears local storage and
-// routes to RegisterScreen instead of ChildActiveScreen.
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
