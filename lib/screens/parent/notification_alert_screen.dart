@@ -303,7 +303,7 @@ class _NotificationAlertScreenState
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Icon(Icons.notifications_none_outlined,
                 size: 56,
-                color: AppColors.textSub.withOpacity(0.3)),
+                color: AppColors.textSub.withValues(alpha:0.3)),
             const SizedBox(height: 12),
             const Text('No alerts',
                 style: TextStyle(
@@ -345,7 +345,7 @@ class _FilterChip extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: active ? color.withOpacity(0.12) : Colors.white,
+            color: active ? color.withValues(alpha:0.12) : Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: active ? color : AppColors.divider,
@@ -393,17 +393,17 @@ class _AlertTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: entry.isRead
             ? Colors.white
-            : entry.color.withOpacity(0.05),
+            : entry.color.withValues(alpha:0.05),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: entry.isRead
               ? AppColors.divider
-              : entry.color.withOpacity(0.3),
+              : entry.color.withValues(alpha:0.3),
           width: entry.isRead ? 1 : 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: Colors.black.withValues(alpha:0.03),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -416,7 +416,7 @@ class _AlertTile extends StatelessWidget {
           Container(
             width: 40, height: 40,
             decoration: BoxDecoration(
-              color: entry.color.withOpacity(0.12),
+              color: entry.color.withValues(alpha:0.12),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(entry.icon, size: 20, color: entry.color),
@@ -465,17 +465,17 @@ class _AlertTile extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: entry.color.withOpacity(0.06),
+                      color: entry.color.withValues(alpha:0.06),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                          color: entry.color.withOpacity(0.2)),
+                          color: entry.color.withValues(alpha:0.2)),
                     ),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Icon(Icons.format_quote,
                             size: 13,
-                            color: entry.color.withOpacity(0.6)),
+                            color: entry.color.withValues(alpha:0.6)),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
@@ -549,16 +549,18 @@ class _AlertTile extends StatelessWidget {
                               fontWeight: FontWeight.w600,
                               decoration: TextDecoration.underline)),
                     ),
+                    
                   ] else if (!entry.isRead) ...[
                     GestureDetector(
                       onTap: onMarkRead,
-                      child:  Text('Mark read',
+                      child: const Text('Mark read',
                           style: TextStyle(
                               fontSize: 11,
                               color: AppColors.primary,
                               fontWeight: FontWeight.w600,
                               decoration: TextDecoration.underline)),
                     ),
+                  ],
                 ]),
               ],
             ),
@@ -572,7 +574,7 @@ class _AlertTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
         margin: const EdgeInsets.only(right: 4),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
+          color: color.withValues(alpha:0.12),
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(label,
