@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:device_policy_manager/device_policy_manager.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
@@ -123,13 +124,12 @@ class BypassDetectionService {
   Future<void> _handleEvent(AccessibilityEvent event) async {
     final pkg  = event.packageName?.toLowerCase() ?? '';
 
-    // ── 1. If Locked Enforcement ──────────────────────────────────────────
-    // If the device is supposed to be locked, any app that isn't SafeChild
-    // triggers an immediate redirect back to the lock screen.
+    // ── 1. If CURRENTLY  Locked  ──────────────────────────────────────────
+    // triggers an immediate phone lock + redirect back to SafeChild.
     if (_isLocked && pkg.isNotEmpty && !pkg.contains('com.safechild.safechild')) {
-       // Ignore system UI and launcher to avoid some flickering, but keep it tight
-       if (!pkg.contains('android.systemui') && !pkg.contains('launcher')) {
+       if (!pkg.contains('android.systemui')) {
           debugPrint('BYPASS: Device is locked. Blocking app: $pkg');
+          DevicePolicyManager.lockNow();
           _redirectToSafeChild();
           return;
        }
@@ -173,7 +173,7 @@ class BypassDetectionService {
     // ── Check for dangerous keywords → redirect ────────────────────────
     final eventString = event.toString().toLowerCase();
     
-    // We only trigger protection if the target app is literally 'safechild'
+    // trigger protection if target app = 'safechild'
     bool isDangerous = text.contains('safechild') || eventString.contains('safechild');
 
     if (isDangerous) {
@@ -185,14 +185,14 @@ class BypassDetectionService {
         _lastDangerousLog = logNow;
         _logBypassEvent(
           eventType:   'settings_access',
-          description: 'Child attempted to access SafeChild settings/uninstall.',
+          description: 'Child attempted to access SafeChild settings/uninstall that related to Safechild app.',
           isBlocked:   true,
         );
       }
     }
   }
 
-  // ── Redirect child to home screen ─────────────────────────────────────
+  // ── Redirect child to home screen ───
   void _redirectToHome() {
     final now = DateTime.now();
     if (_lastRedirect != null &&
@@ -208,7 +208,7 @@ class BypassDetectionService {
       debugPrint('BYPASS: redirect failed — $e');
     });
 
-    debugPrint('BYPASS: redirected to home screen ✓');
+    debugPrint('BYPASS: redirected to home screen.......');
   }
 
   void _redirectToSafeChild() {

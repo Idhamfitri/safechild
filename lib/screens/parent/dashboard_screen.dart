@@ -18,6 +18,7 @@ import '../../utils/app_theme.dart';
 import '../auth/login_screen.dart';
 import 'add_child_screen.dart';
 import 'child_status_screen.dart';
+import 'parent_settings_screen.dart';
 
 class ParentDashboardScreen extends StatefulWidget {
   const ParentDashboardScreen({super.key});
@@ -144,6 +145,15 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
         title: const Text('SafeChild'),
         automaticallyImplyLeading: false,
         actions: [
+          IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Account Settings',
+              onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) =>
+                            ParentSettingsScreen(parentId: _parentId)),
+                  )),
           IconButton(
               icon: const Icon(Icons.logout_outlined),
               tooltip: 'Log Out',

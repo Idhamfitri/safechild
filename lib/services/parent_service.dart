@@ -36,6 +36,10 @@ class ParentService {
             (doc) => doc.exists ? ParentModel.fromFirestore(doc) : null,
           );
 
+  // ── Update email in Firestore after Firebase Auth email change ────────────
+  Future<void> updateEmail(String parentId, String newEmail) =>
+      _col.doc(parentId).update({'email': newEmail.trim()});
+
   // ── Save parent FCM token so Cloud Function can send alerts ───────────────
   // Call this once after parent logs in and on token refresh.
   // when a new incident with is_alert_send = true is created.

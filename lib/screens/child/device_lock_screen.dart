@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:device_policy_manager/device_policy_manager.dart';
 import '../../services/screen_time_service.dart';
 import '../../utils/app_theme.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,9 +14,30 @@ class DeviceLockScreen extends StatefulWidget {
   State<DeviceLockScreen> createState() => _DeviceLockScreenState();
 }
 
-class _DeviceLockScreenState extends State<DeviceLockScreen> {
+class _DeviceLockScreenState extends State<DeviceLockScreen>
+    with WidgetsBindingObserver {
   final _screenTimeService = ScreenTimeService();
   bool _isRequesting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Child pressed home or power button — lock the phone immediately
+    if (state == AppLifecycleState.paused) {
+      DevicePolicyManager.lockNow();
+    }
+  }
 
   Future<void> _requestTime(int minutes, String reason) async {
     final prefs = await SharedPreferences.getInstance();
@@ -44,71 +66,99 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
 
   void _showRequestDialog() {
     final reasonController = TextEditingController();
-    
+    int selectedMinutes = 15;
+
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text(
-          'Request Extra Time',
-          style: TextStyle(fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: reasonController,
-              decoration: const InputDecoration(
-                labelText: 'Reason for extension',
-                hintText: 'e.g. Finishing homework...',
-                border: OutlineInputBorder(),
+      barrierDismissible: true,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text(
+            'Request Extra Time',
+            style: TextStyle(fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Tell your parent why you need more time.',
+                style: TextStyle(color: Colors.grey, fontSize: 13),
+                textAlign: TextAlign.center,
               ),
-              maxLines: 2,
+              const SizedBox(height: 12),
+              TextField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Reason for extension',
+                  hintText: 'e.g. Finishing homework...',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+              const SizedBox(height: 20),
+              const Text('Select Duration:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '$selectedMinutes min',
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+              Slider(
+                value: selectedMinutes.toDouble(),
+                min: 1,
+                max: 60,
+                divisions: 59,
+                activeColor: AppColors.primary,
+                label: '$selectedMinutes min',
+                onChanged: (v) => setDialogState(() => selectedMinutes = v.round()),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: const [
+                  Text('1 min', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  Text('60 min', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
             ),
-            const SizedBox(height: 20),
-            const Text('Select Duration:', style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _TimeButton(15, reasonController),
-                _TimeButton(30, reasonController),
-                _TimeButton(60, reasonController),
-              ],
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              onPressed: () {
+                final reason = reasonController.text.trim();
+                if (reason.isEmpty) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    const SnackBar(content: Text('Please enter a reason first!')),
+                  );
+                  return;
+                }
+                Navigator.of(dialogContext).pop();
+                _requestTime(selectedMinutes, reason);
+              },
+              child: const Text('Send Request'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-          ),
-        ],
       ),
-    );
-  }
-
-  Widget _TimeButton(int minutes, TextEditingController controller) {
-    return ElevatedButton(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      ),
-      onPressed: () {
-        final reason = controller.text.trim();
-        if (reason.isEmpty) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Please enter a reason first!')),
-          );
-          return;
-        }
-        Navigator.pop(context); // Close the dialog
-        _requestTime(minutes, reason);
-      },
-      child: Text('$minutes min'),
     );
   }
 
@@ -144,24 +194,35 @@ class _DeviceLockScreenState extends State<DeviceLockScreen> {
                   ),
                   const SizedBox(height: 60),
                   if (!widget.isManualLock)
-                    TextButton(
-                      onPressed: _isRequesting ? null : _showRequestDialog,
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white70,
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isRequesting ? null : _showRequestDialog,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: AppColors.primary,
+                          disabledBackgroundColor: Colors.white38,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: _isRequesting
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: AppColors.primary),
+                              )
+                            : const Icon(Icons.access_time_rounded),
+                        label: Text(
+                          _isRequesting ? 'Sending Request...' : 'Request Extra Time',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
-                      child: _isRequesting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
-                            )
-                          : const Text(
-                              'Request time override',
-                              style: TextStyle(
-                                fontSize: 14,
-                                decoration: TextDecoration.underline,
-                              ),
-                            ),
                     ),
                 ],
               ),

@@ -34,6 +34,30 @@ class AuthService {
   Future<void> sendPasswordResetEmail(String email) =>
       _auth.sendPasswordResetEmail(email: email.trim());
 
+  // Re-authenticate then update email in Firebase Auth
+  Future<void> updateEmail({
+    required String currentPassword,
+    required String newEmail,
+  }) async {
+    final user = _auth.currentUser!;
+    final cred = EmailAuthProvider.credential(
+        email: user.email!, password: currentPassword);
+    await user.reauthenticateWithCredential(cred);
+    await user.verifyBeforeUpdateEmail(newEmail.trim());
+  }
+
+  // Re-authenticate then update password in Firebase Auth
+  Future<void> updatePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final user = _auth.currentUser!;
+    final cred = EmailAuthProvider.credential(
+        email: user.email!, password: currentPassword);
+    await user.reauthenticateWithCredential(cred);
+    await user.updatePassword(newPassword);
+  }
+
   static String getErrorMessage(FirebaseAuthException e) {
     switch (e.code) {
       case 'email-already-in-use':

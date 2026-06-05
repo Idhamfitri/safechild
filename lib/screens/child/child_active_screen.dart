@@ -6,7 +6,7 @@ import 'package:flutter_accessibility_service/flutter_accessibility_service.dart
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/background_service.dart';
-import '../../services/content_detection_service_v2.dart'; // V2: local FastText
+import '../../services/content_detection_service_v3.dart'; // V3: hybrid LR + Gemini
 import '../../services/bypass_detection_service.dart';
 import '../../utils/app_theme.dart';
 import '../../utils/app_utils.dart';
@@ -39,7 +39,7 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
   String _lockReason = 'Device Locked';
   bool _isManualLock = false;
 
-  final _detectionService = ContentDetectionServiceV2();
+  final _detectionService = ContentDetectionServiceV3();
   final _bypassService    = BypassDetectionService();
 
   @override
@@ -175,15 +175,20 @@ class _ChildActiveScreenState extends State<ChildActiveScreen> {
         .listen((snap) {
       if (!mounted || !snap.exists) return;
       final lock = ScreenTimeLock.fromFirestore(snap);
-      
+
       bool isLocked = lock.isLocked;
-      
+
+      // Lock the phone screen immediately when transitioning to locked
+      if (isLocked && !_isLocked) {
+        DevicePolicyManager.lockNow();
+      }
+
       setState(() {
         _isLocked = isLocked;
         _isManualLock = lock.unlockedAt == null;
         _lockReason = _isManualLock ? 'Device is manually locked by parent' : 'Device is being locked';
       });
-      
+
       // Update bypass service state for active enforcement
       _bypassService.setLocked(isLocked);
     }, onError: (_) {});
