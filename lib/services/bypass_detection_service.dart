@@ -8,14 +8,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../utils/app_utils.dart';
 
 class BypassDetectionService {
   static StreamSubscription? _subscription;
   String?             _deviceId;
+  String?             _childName;
   DateTime?           _lastRedirect;
   DateTime?           _lastSettingsLog;
-  DateTime?           _lastDangerousLog;
+  DateTime?           _lastTamperingLog;
+  DateTime?           _lastLockEnforce;
   bool                _isLocked = false;
   // Per-package log throttle — prevents spam in terminal
   final Map<String, DateTime> _lastLogTime = {};
@@ -25,36 +26,33 @@ class BypassDetectionService {
     debugPrint('BYPASS: lock state updated to: $locked');
   }
 
-  // ── Settings packages to monitor ─────────────────────────────────────
-  static const _settingsPackages = {
+  // ── General settings app (log only, no alert) ─────────────────────────
+  static const _generalSettingsPackages = {
     'com.android.settings',
+  };
+
+  // ── Permission/security packages (alert parent) ───────────────────────
+  static const _tamperingPackages = {
     'com.miui.securitycenter',
     'com.miui.permcenter',
     'com.android.packageinstaller',
     'com.google.android.packageinstaller',
     'com.miui.appmanager',
-    'com.android.vending', // Google Play Store
+    'com.android.vending',
   };
 
-  // ── Dangerous Action Keywords ─────────────────────────────────────────
-  // These are specific buttons/menus that shouldn't be accessible.
-  static const _dangerousActions = [
-    'uninstall',                    // English uninstall
-    'nyahpasang',                   // Malay uninstall
-    'force stop',                   // English force stop
-    'paksa berhenti',               // Malay force stop
-    'remove',                       // English remove
-    'buang',                        // Malay remove
-    'deactivate',                   // English deactivate
-    'nyahaktif',                    // Malay deactivate
-    'device administrator',         // English device admin
-    'pentadbir peranti',            // Malay device admin
+  // ── IME/keyboard packages — excluded from lock enforcement ────────────
+  // On some MIUI devices keyboard events briefly fire lifecycle paused,
+  // causing lockNow() to trigger repeatedly while the dialog is open.
+  static const _imePackageFragments = [
+    'inputmethod', 'keyboard', 'ime', 'pinyin', 'honeyboard',
   ];
 
-  // ── Throttle — only redirect once every 3 seconds ─────────────────────
-  static const _redirectCooldown  = Duration(seconds: 3);
-  // ── Log settings access once per minute ───────────────────────────────
-  static const _logCooldown       = Duration(minutes: 1);
+  // ── Cooldowns ─────────────────────────────────────────────────────────
+  static const _redirectCooldown   = Duration(seconds: 3);
+  static const _logCooldown        = Duration(minutes: 1);
+  // Prevents lockNow() spam — one enforcement per 2 s while locked
+  static const _lockEnforceCooldown = Duration(seconds: 2);
 
   Future<void> start() async {
     if (_subscription != null) {
@@ -76,6 +74,15 @@ class BypassDetectionService {
       debugPrint('BYPASS: start() aborted — device_id not found');
       return;
     }
+
+    // Fetch child name once so notifications can include it
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('child_devices')
+          .doc(_deviceId)
+          .get();
+      _childName = doc.data()?['full_name'] as String?;
+    } catch (_) {}
 
     _subscription = FlutterAccessibilityService.accessStream.listen(
       _onEvent,
@@ -122,71 +129,106 @@ class BypassDetectionService {
   }
 
   Future<void> _handleEvent(AccessibilityEvent event) async {
-    final pkg  = event.packageName?.toLowerCase() ?? '';
+    final pkg = event.packageName?.toLowerCase() ?? '';
+    if (pkg.isEmpty) return;
 
-    // ── 1. If CURRENTLY  Locked  ──────────────────────────────────────────
-    // triggers an immediate phone lock + redirect back to SafeChild.
-    if (_isLocked && pkg.isNotEmpty && !pkg.contains('com.safechild.safechild')) {
-       if (!pkg.contains('android.systemui')) {
-          debugPrint('BYPASS: Device is locked. Blocking app: $pkg');
-          DevicePolicyManager.lockNow();
-          _redirectToSafeChild();
-          return;
-       }
-    }
-    
-    // ── Throttle debug logs — max one log per pkg per 2 seconds ──────────
     final now = DateTime.now();
     final lastLog = _lastLogTime[pkg];
-    final shouldLog = lastLog == null || now.difference(lastLog).inSeconds >= 2;
-    if (shouldLog) _lastLogTime[pkg] = now;
-    
-    // ── Is this a settings package? ─────────────────────────────────
-    final isSettings = _settingsPackages.any((p) => pkg.contains(p));
-    if (!isSettings) return;
+    if (lastLog == null || now.difference(lastLog).inSeconds >= 2) {
+      _lastLogTime[pkg] = now;
+    }
 
+    // ── 1. Permission/security tampering packages ─────────────────────────
+    // Checked FIRST — must fire even when the device is screen-time locked,
+    // because the locked-enforcement section would otherwise return early and
+    // the device_tampering event would never be logged.
+    final isTampering = _tamperingPackages.any((p) => pkg.contains(p));
+    if (isTampering) {
+      debugPrint('BYPASS: tampering package detected — pkg=$pkg');
+
+      if (_lastTamperingLog == null ||
+          now.difference(_lastTamperingLog!) > _redirectCooldown) {
+        _lastTamperingLog = now;
+        _logBypassEvent(
+          eventType:   'device_tampering',
+          description: '${_childName ?? 'Child'} trying to tamper the permission',
+          isBlocked:   true,
+          silentLog:   false,
+        );
+      }
+
+      // When locked, bring back to SafeChild; otherwise go to home screen
+      if (_isLocked) {
+        if (_lastLockEnforce == null ||
+            now.difference(_lastLockEnforce!) > _lockEnforceCooldown) {
+          _lastLockEnforce = now;
+          DevicePolicyManager.lockNow();
+          _redirectToSafeChild();
+        }
+      } else {
+        _redirectToHome();
+      }
+      return;
+    }
+
+    // ── 2. Screen-time lock enforcement (all other non-SafeChild packages) ──
+    if (_isLocked &&
+        !pkg.contains('com.safechild.safechild') &&
+        !pkg.contains('android.systemui') &&
+        !_imePackageFragments.any((f) => pkg.contains(f))) {
+      if (_lastLockEnforce == null ||
+          now.difference(_lastLockEnforce!) > _lockEnforceCooldown) {
+        _lastLockEnforce = now;
+        debugPrint('BYPASS: locked — blocking pkg=$pkg');
+        DevicePolicyManager.lockNow();
+        _redirectToSafeChild();
+      }
+      return;
+    }
+
+    // ── 3. General settings app ───────────────────────────────────────────
+    final isGeneralSettings = _generalSettingsPackages.any((p) => pkg.contains(p));
+    if (!isGeneralSettings) return;
+
+    // Collect screen text to check if child navigated to SafeChild's app page
     String text = (event.text ?? '').toLowerCase();
-    
-    // Fallback — extract text from subNodes as well
     if (event.subNodes != null) {
-      final subTexts = event.subNodes!
+      final sub = event.subNodes!
           .where((n) => n.text != null && n.text != 'null' && n.text!.trim().isNotEmpty)
           .map((n) => n.text!.toLowerCase())
           .join(' ');
-      text += ' ' + subTexts;
+      text += ' $sub';
     }
-
-    debugPrint('BYPASS: settings screen detected — pkg=$pkg text=$text');
-
-    // ── Log settings access (throttled) ───────────────────────────────
-    final logNow = DateTime.now();
-    if (_lastSettingsLog == null ||
-        logNow.difference(_lastSettingsLog!) > _logCooldown) {
-      _lastSettingsLog = logNow;
-      _logBypassEvent(
-        eventType:   'settings_access',
-        description: 'Child opened system settings',
-        isBlocked:   false,
-      );
-    }
-
-    // ── Check for dangerous keywords → redirect ────────────────────────
     final eventString = event.toString().toLowerCase();
-    
-    // trigger protection if target app = 'safechild'
-    bool isDangerous = text.contains('safechild') || eventString.contains('safechild');
+    final onSafeChildPage =
+        text.contains('safechild') || eventString.contains('safechild');
 
-    if (isDangerous) {
-      debugPrint('BYPASS: dangerous settings page detected — redirecting');
+    if (onSafeChildPage) {
+      // Child navigated to SafeChild's app info / permission page → tamper alert
+      debugPrint('BYPASS: SafeChild permission page detected inside settings');
       _redirectToHome();
-      
-      // Prevent 3-5 simultaneous Native Android events from writing 5 Firebase logs instantly
-      if (_lastDangerousLog == null || logNow.difference(_lastDangerousLog!) > _redirectCooldown) {
-        _lastDangerousLog = logNow;
+
+      if (_lastTamperingLog == null ||
+          now.difference(_lastTamperingLog!) > _redirectCooldown) {
+        _lastTamperingLog = now;
         _logBypassEvent(
-          eventType:   'settings_access',
-          description: 'Child attempted to access SafeChild settings/uninstall that related to Safechild app.',
+          eventType:   'device_tampering',
+          description: '${_childName ?? 'Child'} trying to tamper the permission',
           isBlocked:   true,
+          silentLog:   false,
+        );
+      }
+    } else {
+      // Just opened the general settings home page — log only, no alert
+      debugPrint('BYPASS: general settings opened — pkg=$pkg');
+      if (_lastSettingsLog == null ||
+          now.difference(_lastSettingsLog!) > _logCooldown) {
+        _lastSettingsLog = now;
+        _logBypassEvent(
+          eventType:   'settings_opened',
+          description: '${_childName ?? 'Child'} open the general setting',
+          isBlocked:   false,
+          silentLog:   true,
         );
       }
     }
@@ -223,23 +265,26 @@ class BypassDetectionService {
   }
 
   // ── Log bypass event to Firestore ─────────────────────────────────────
+  // silentLog=true → stored in parent log only, no push notification sent.
   Future<void> _logBypassEvent({
     required String eventType,
     required String description,
     required bool   isBlocked,
+    bool            silentLog = false,
   }) async {
     if (_deviceId == null) return;
     try {
       await FirebaseFirestore.instance.collection('bypass_events').add({
-        'device_id':        _deviceId,
-        'event_type':       eventType,
+        'device_id':         _deviceId,
+        'child_name':        _childName ?? 'Unknown',
+        'event_type':        eventType,
         'event_description': description,
-        'is_blocked':       isBlocked,
-        'is_reviewed':      false,
-        'is_alert_send':    false,
-        'detected_at':      FieldValue.serverTimestamp(),
+        'is_blocked':        isBlocked,
+        'is_reviewed':       false,
+        'is_alert_send':     silentLog, // true = CF skips push notification
+        'detected_at':       FieldValue.serverTimestamp(),
       });
-      debugPrint('BYPASS: event logged — $eventType isBlocked=$isBlocked');
+      debugPrint('BYPASS: event logged — $eventType isBlocked=$isBlocked silent=$silentLog');
     } catch (e) {
       debugPrint('BYPASS: Firestore write failed — $e');
     }

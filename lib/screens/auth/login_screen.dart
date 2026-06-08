@@ -49,6 +49,20 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       // ── Normal parent ─────────────────────────────────────────────────────
+      // Check if account has been suspended before allowing access
+      final parentDoc = await FirebaseFirestore.instance
+          .collection('parents')
+          .doc(cred.user!.uid)
+          .get();
+      final accountStatus =
+          parentDoc.data()?['account_status'] as String? ?? 'active';
+
+      if (accountStatus == 'suspended') {
+        await _authService.logout();
+        if (mounted) _showSuspendedDialog();
+        return;
+      }
+
       await prefs.setString('role', 'parent');
       if (mounted) {
         Navigator.pushAndRemoveUntil(
@@ -77,6 +91,39 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (_) {
       _error('Could not send reset email.');
     }
+  }
+
+  void _showSuspendedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(children: [
+          Icon(Icons.block, color: Colors.orange, size: 22),
+          SizedBox(width: 10),
+          Text('Account Suspended',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ]),
+        content: const Text(
+          'Your account has been suspended.\n\n'
+          'Please contact admin support at:\nadmin@safechild.com',
+          style: TextStyle(fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _error(String msg) => _snack(msg, color: AppColors.error);

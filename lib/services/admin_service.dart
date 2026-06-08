@@ -150,6 +150,16 @@ class AdminService {
   Future<void> suspendParent(String parentId) async {
     await _db.collection('parents').doc(parentId)
         .update({'account_status': 'suspended'});
+
+    // Pause monitoring on all linked child devices by enabling offline_mode
+    final links = await _db.collection('parent_child_links')
+        .where('parent_id', isEqualTo: parentId).get();
+    for (final link in links.docs) {
+      await _db.collection('monitoring_settings')
+          .doc(link.id)
+          .set({'offline_mode': true}, SetOptions(merge: true));
+    }
+
     await _logAdminAction(
         parentId: parentId, action: 'suspend',
         note: 'Account suspended by admin');
@@ -158,6 +168,16 @@ class AdminService {
   Future<void> activateParent(String parentId) async {
     await _db.collection('parents').doc(parentId)
         .update({'account_status': 'active'});
+
+    // Restore monitoring on all linked child devices
+    final links = await _db.collection('parent_child_links')
+        .where('parent_id', isEqualTo: parentId).get();
+    for (final link in links.docs) {
+      await _db.collection('monitoring_settings')
+          .doc(link.id)
+          .set({'offline_mode': false}, SetOptions(merge: true));
+    }
+
     await _logAdminAction(
         parentId: parentId, action: 'activate',
         note: 'Account reactivated by admin');

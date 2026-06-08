@@ -2,8 +2,10 @@
 // UPDATED: Child cards show real-time mini status strip (online, battery,
 // last active) via StreamBuilder on HeartbeatService.
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/parent_child_link_model.dart';
@@ -28,7 +30,7 @@ class ParentDashboardScreen extends StatefulWidget {
 }
 
 class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
-  
+
   final _pairingService   = PairingService();
   final _parentService    = ParentService();
   final _authService      = AuthService();
@@ -36,11 +38,80 @@ class _ParentDashboardScreenState extends State<ParentDashboardScreen> {
 
   String get _parentId => FirebaseAuth.instance.currentUser!.uid;
 
+  StreamSubscription<DocumentSnapshot>? _suspensionSub;
+  bool _suspendedDialogShown = false;
+
   @override
   void initState() {
     super.initState();
-    // Module 2: save FCM token so Cloud Function can send incident alerts
     _parentService.saveFcmToken(_parentId);
+    _listenForSuspension();
+  }
+
+  void _listenForSuspension() {
+    _suspensionSub = FirebaseFirestore.instance
+        .collection('parents')
+        .doc(_parentId)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted || _suspendedDialogShown) return;
+      final status =
+          snap.data()?['account_status'] as String? ?? 'active';
+      if (status == 'suspended') {
+        _suspendedDialogShown = true;
+        _showSuspendedAndLogout();
+      }
+    });
+  }
+
+  Future<void> _showSuspendedAndLogout() async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(children: [
+          Icon(Icons.block, color: Colors.orange, size: 22),
+          SizedBox(width: 10),
+          Text('Account Suspended',
+              style:
+                  TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ]),
+        content: const Text(
+          'Your account has been suspended.\n\n'
+          'Please contact admin support at:\nadmin@safechild.com',
+          style: TextStyle(fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+    // Log out after the parent dismisses the dialog
+    await _authService.logout();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('role');
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (_) => false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _suspensionSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _logout() async {

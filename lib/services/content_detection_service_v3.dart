@@ -2,7 +2,7 @@
 // V3: Hybrid — Local LR first, Gemini escalation for uncertain zone.
 //
 // Decision logic:
-//   local prob < 0.30              -> SAFE  (no Gemini call)
+//   local prob < 0.20              -> SAFE  (no Gemini call)
 //   local prob > 0.70              -> TOXIC (no Gemini call, log directly)
 //   0.30 <= local prob <= 0.70     -> UNCERTAIN -> escalate to Gemini
 //
@@ -125,7 +125,7 @@ class ContentDetectionServiceV3 {
   _LRClassifier? _classifier;
 
   // Confidence thresholds
-  static const double _safeThreshold  = 0.30;
+  static const double _safeThreshold  = 0.20;
   static const double _toxicThreshold = 0.70;
 
   // Optimization state

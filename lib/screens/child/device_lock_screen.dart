@@ -18,6 +18,9 @@ class _DeviceLockScreenState extends State<DeviceLockScreen>
     with WidgetsBindingObserver {
   final _screenTimeService = ScreenTimeService();
   bool _isRequesting = false;
+  // Prevents lockNow() from firing when the request dialog/keyboard is open.
+  // On some MIUI devices the keyboard briefly triggers AppLifecycleState.paused.
+  bool _requestDialogOpen = false;
 
   @override
   void initState() {
@@ -33,8 +36,9 @@ class _DeviceLockScreenState extends State<DeviceLockScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Child pressed home or power button — lock the phone immediately
-    if (state == AppLifecycleState.paused) {
+    // Skip lock when dialog is open — keyboard show/hide on some MIUI devices
+    // briefly fires paused, which would cause repeated screen blinks.
+    if (state == AppLifecycleState.paused && !_requestDialogOpen) {
       DevicePolicyManager.lockNow();
     }
   }
@@ -67,99 +71,124 @@ class _DeviceLockScreenState extends State<DeviceLockScreen>
   void _showRequestDialog() {
     final reasonController = TextEditingController();
     int selectedMinutes = 15;
+    _requestDialogOpen = true;
 
-    showDialog(
+    showGeneralDialog<void>(
       context: context,
       barrierDismissible: true,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text(
-            'Request Extra Time',
-            style: TextStyle(fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Tell your parent why you need more time.',
-                style: TextStyle(color: Colors.grey, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: reasonController,
-                decoration: const InputDecoration(
-                  labelText: 'Reason for extension',
-                  hintText: 'e.g. Finishing homework...',
-                  border: OutlineInputBorder(),
-                ),
-                maxLines: 2,
-              ),
-              const SizedBox(height: 20),
-              const Text('Select Duration:', style: TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+      barrierLabel: '',
+      barrierColor: Colors.black54,
+      transitionDuration: const Duration(milliseconds: 160),
+      // Plain fade — no scale/spring bounce that causes a brief layout overflow
+      transitionBuilder: (ctx, anim, _, child) =>
+          FadeTransition(opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut), child: child),
+      pageBuilder: (ctx, anim1, anim2) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          // Re-reads keyboard height every rebuild so the card shifts up cleanly
+          final keyboardInset = MediaQuery.viewInsetsOf(dialogContext).bottom;
+          return Dialog(
+            // Upper-centre — leaves room below so the keyboard never pushes it off-screen
+            alignment: const Alignment(0, -0.45),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            insetPadding: EdgeInsets.fromLTRB(24, 24, 24, keyboardInset + 16),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    '$selectedMinutes min',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
+                  // ── Title row ──
+                  const Text(
+                    'Request Extra Time',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ── Reason field (single line, compact) ──
+                  TextField(
+                    controller: reasonController,
+                    decoration: const InputDecoration(
+                      labelText: 'Reason',
+                      hintText: 'e.g. Finishing homework…',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     ),
+                    maxLines: 1,
+                    textInputAction: TextInputAction.done,
+                  ),
+                  const SizedBox(height: 14),
+
+                  // ── Duration row ──
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Duration',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      Text(
+                        '$selectedMinutes min',
+                        style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary),
+                      ),
+                    ],
+                  ),
+                  Slider(
+                    value: selectedMinutes.toDouble(),
+                    min: 1,
+                    max: 60,
+                    divisions: 59,
+                    activeColor: AppColors.primary,
+                    label: '$selectedMinutes min',
+                    onChanged: (v) =>
+                        setDialogState(() => selectedMinutes = v.round()),
+                  ),
+
+                  // ── Buttons ──
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('Cancel',
+                            style: TextStyle(color: Colors.grey)),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () {
+                          final reason = reasonController.text.trim();
+                          if (reason.isEmpty) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Please enter a reason first!')),
+                            );
+                            return;
+                          }
+                          Navigator.of(dialogContext).pop();
+                          _requestTime(selectedMinutes, reason);
+                        },
+                        child: const Text('Send Request'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              Slider(
-                value: selectedMinutes.toDouble(),
-                min: 1,
-                max: 60,
-                divisions: 59,
-                activeColor: AppColors.primary,
-                label: '$selectedMinutes min',
-                onChanged: (v) => setDialogState(() => selectedMinutes = v.round()),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('1 min', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  Text('60 min', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                ],
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
             ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              ),
-              onPressed: () {
-                final reason = reasonController.text.trim();
-                if (reason.isEmpty) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    const SnackBar(content: Text('Please enter a reason first!')),
-                  );
-                  return;
-                }
-                Navigator.of(dialogContext).pop();
-                _requestTime(selectedMinutes, reason);
-              },
-              child: const Text('Send Request'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
-    );
+    ).whenComplete(() {
+      if (mounted) _requestDialogOpen = false;
+    });
   }
 
 

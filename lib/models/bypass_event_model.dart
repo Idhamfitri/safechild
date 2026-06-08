@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum BypassEventType {
+  settingsOpened,    // child opened general settings — log only
+  deviceTampering,   // child tried to tamper permissions — alert
+  // Legacy values kept for backward compat with existing Firestore documents
   uninstallAttempt,
   settingsAccess,
   permissionRevoked,
@@ -14,6 +17,8 @@ enum BypassEventType {
 extension BypassEventTypeX on BypassEventType {
   String get firestoreValue {
     switch (this) {
+      case BypassEventType.settingsOpened:   return 'settings_opened';
+      case BypassEventType.deviceTampering:  return 'device_tampering';
       case BypassEventType.uninstallAttempt: return 'uninstall_attempt';
       case BypassEventType.settingsAccess:   return 'settings_access';
       case BypassEventType.permissionRevoked: return 'permission_revoked';
@@ -24,6 +29,8 @@ extension BypassEventTypeX on BypassEventType {
 
   String get displayLabel {
     switch (this) {
+      case BypassEventType.settingsOpened:   return 'Open Setting';
+      case BypassEventType.deviceTampering:  return 'Device Tampering Detected';
       case BypassEventType.uninstallAttempt: return 'Uninstall Attempt';
       case BypassEventType.settingsAccess:   return 'Settings Access';
       case BypassEventType.permissionRevoked: return 'Permission Revoked';
@@ -34,6 +41,8 @@ extension BypassEventTypeX on BypassEventType {
 
   IconData get icon {
     switch (this) {
+      case BypassEventType.settingsOpened:   return Icons.settings_outlined;
+      case BypassEventType.deviceTampering:  return Icons.security_outlined;
       case BypassEventType.uninstallAttempt: return Icons.delete_sweep_outlined;
       case BypassEventType.settingsAccess:   return Icons.settings_outlined;
       case BypassEventType.permissionRevoked: return Icons.no_encryption_outlined;
@@ -42,17 +51,26 @@ extension BypassEventTypeX on BypassEventType {
     }
   }
 
-  Color get color => const Color(0xFFD32F2F); 
+  Color get color {
+    switch (this) {
+      case BypassEventType.settingsOpened:  return const Color(0xFF1565C0);
+      case BypassEventType.deviceTampering: return const Color(0xFFD32F2F);
+      default:                              return const Color(0xFFD32F2F);
+    }
+  }
 }
 
 BypassEventType _typeFromString(String? s) {
   switch (s) {
+    case 'settings_opened':    return BypassEventType.settingsOpened;
+    case 'device_tampering':   return BypassEventType.deviceTampering;
     case 'uninstall_attempt':  return BypassEventType.uninstallAttempt;
     case 'settings_access':    return BypassEventType.settingsAccess;
+    case 'permission_settings_opened': return BypassEventType.settingsOpened;
     case 'permission_revoked': return BypassEventType.permissionRevoked;
     case 'heartbeat_loss':     return BypassEventType.heartbeatLoss;
     case 'safe_mode_boot':     return BypassEventType.safeModeBoot;
-    default:                   return BypassEventType.uninstallAttempt;
+    default:                   return BypassEventType.deviceTampering;
   }
 }
 

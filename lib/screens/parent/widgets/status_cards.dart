@@ -1178,9 +1178,41 @@ class AlertsBypassTile extends StatelessWidget {
             style: TextStyle(
                 fontWeight: FontWeight.bold,
                 color: AppColors.textPrimary)),
-        content: const Text(
-            'Mark this bypass attempt as reviewed and remove it?',
-            style: TextStyle(color: AppColors.textSub)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.primary.withOpacity(0.18)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(event.eventType.displayLabel,
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary)),
+                  const SizedBox(height: 4),
+                  Text(event.eventDescription,
+                      style: const TextStyle(
+                          fontSize: 13,
+                          color: AppColors.textPrimary,
+                          height: 1.4)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+                'Mark this bypass attempt as reviewed and remove it?',
+                style: TextStyle(color: AppColors.textSub)),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),

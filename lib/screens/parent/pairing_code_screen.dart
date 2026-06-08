@@ -40,7 +40,8 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
 
     if (updated.isExpired && !_navigating) _showExpiredDialog();
 
-    if (updated.isLinked && !_navigating) {
+    // Wait for child to complete permission setup before navigating
+    if (updated.isLinked && updated.setupPhase == 'active' && !_navigating) {
       _navigating = true;
       HapticFeedback.mediumImpact();
       Future.delayed(const Duration(milliseconds: 800), () {
@@ -256,13 +257,14 @@ class _PairingCodeScreenState extends State<PairingCodeScreen> {
           const CircularProgressIndicator(
               color: AppColors.primary, strokeWidth: 3),
           const SizedBox(height: 28),
-          const Text('Linking in process...',
+          const Text('Setting up permissions...',
               style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary)),
           const SizedBox(height: 8),
-          const Text('Please wait while the child device finishes setup.',
+          const Text(
+              'The child device is granting required permissions.\nPlease wait — this may take a moment.',
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 13,

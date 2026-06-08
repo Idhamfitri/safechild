@@ -27,6 +27,7 @@ class ParentChildLinkModel {
   final PairingStatus pairingStatus;
   final DateTime?     linkedAt;
   final LinkStatus    linkStatus;
+  final String?       setupPhase;
 
   ParentChildLinkModel({
     required this.pCLinkId,
@@ -36,6 +37,7 @@ class ParentChildLinkModel {
     this.pairingStatus = PairingStatus.pending,
     this.linkedAt,
     this.linkStatus   = LinkStatus.active,
+    this.setupPhase,
   });
 
   factory ParentChildLinkModel.fromFirestore(
@@ -51,6 +53,7 @@ class ParentChildLinkModel {
           ? (d['linked_at'] as Timestamp).toDate()
           : null,
       linkStatus:  LinkStatusX.fromString(d['link_status'] ?? 'active'),
+      setupPhase:  d['setup_phase'] as String?,
     );
   }
 
