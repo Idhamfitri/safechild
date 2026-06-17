@@ -4,6 +4,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../models/parent_model.dart';
 
 class ParentService {
@@ -42,20 +43,36 @@ class ParentService {
 
   // ── Save parent FCM token so Cloud Function can send alerts ───────────────
   // Call this once after parent logs in and on token refresh.
-  // when a new incident with is_alert_send = true is created.
   Future<void> saveFcmToken(String parentId) async {
     try {
+      // Request notification permission (required on Android 13+ and iOS).
+      await FirebaseMessaging.instance.requestPermission(
+        alert: true, sound: true, badge: true,
+      );
+
+      // Create the alert channel that the Cloud Function targets.
+      // Android 8+ silently drops FCM notifications if the channel doesn't exist.
+      const alertChannel = AndroidNotificationChannel(
+        'safechild_alerts',
+        'SafeChild Alerts',
+        description: 'Real-time safety alerts from child devices',
+        importance: Importance.high,
+        playSound: true,
+      );
+      final notifPlugin = FlutterLocalNotificationsPlugin();
+      await notifPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(alertChannel);
+
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null) return;
 
       await _col.doc(parentId).update({'fcm_token': token});
 
-      // Also handle token refresh
       FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
         _col.doc(parentId).update({'fcm_token': newToken});
       });
-    } catch (_) {
-    
-    }
+    } catch (_) {}
   }
 }

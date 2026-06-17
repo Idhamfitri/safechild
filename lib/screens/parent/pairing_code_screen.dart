@@ -1,5 +1,4 @@
 // lib/screens/parent/pairing_code_screen.dart
-// Parent shows pairing code, then a simple "Linking in process..." spinner
 // until the child completes full setup (setup_phase == active).
 
 import 'dart:async';

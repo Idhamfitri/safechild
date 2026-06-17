@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import '../../utils/app_theme.dart';
 import 'login_screen.dart';
 import 'register_screen.dart';
 import '../parent/dashboard_screen.dart';
 import '../child/child_active_screen.dart';
+import '../child/permission_setup_screen.dart';
 import '../admin/admin_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -56,7 +58,15 @@ class _SplashScreenState extends State<SplashScreen>
       final isStillLinked = await _verifyChildLink(linkId);
 
       if (isStillLinked) {
-        _go(const ChildActiveScreen());
+        // Accessibility service is disabled by Android on every reboot for security.
+        // Re-check and redirect to setup so the child re-enables it before monitoring starts.
+        final accessibilityOn =
+            await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+        if (!accessibilityOn) {
+          _go(const PermissionSetupScreen());
+        } else {
+          _go(const ChildActiveScreen());
+        }
       } else {
         await prefs.remove('role');
         await prefs.remove('link_id');

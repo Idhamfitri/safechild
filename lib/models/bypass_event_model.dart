@@ -6,7 +6,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 enum BypassEventType {
   settingsOpened,    // child opened general settings — log only
   deviceTampering,   // child tried to tamper permissions — alert
-  // Legacy values kept for backward compat with existing Firestore documents
   uninstallAttempt,
   settingsAccess,
   permissionRevoked,

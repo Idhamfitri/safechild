@@ -5,12 +5,15 @@ import 'package:android_intent_plus/flag.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:device_policy_manager/device_policy_manager.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class BypassDetectionService {
   static StreamSubscription? _subscription;
+  static const _channel = MethodChannel('com.safechild/native_helper');
+
   String?             _deviceId;
   String?             _childName;
   DateTime?           _lastRedirect;
@@ -157,7 +160,7 @@ class BypassDetectionService {
         );
       }
 
-      // When locked, bring back to SafeChild; otherwise go to home screen
+      // When locked, bring back to SafeChild; otherwise go to home and force-close
       if (_isLocked) {
         if (_lastLockEnforce == null ||
             now.difference(_lastLockEnforce!) > _lockEnforceCooldown) {
@@ -167,6 +170,8 @@ class BypassDetectionService {
         }
       } else {
         _redirectToHome();
+        // Kill after 400 ms — app must be in background first
+        Future.delayed(const Duration(milliseconds: 400), () => _forceCloseApp(pkg));
       }
       return;
     }
@@ -207,6 +212,8 @@ class BypassDetectionService {
       // Child navigated to SafeChild's app info / permission page → tamper alert
       debugPrint('BYPASS: SafeChild permission page detected inside settings');
       _redirectToHome();
+      // Kill settings after it moves to background
+      Future.delayed(const Duration(milliseconds: 400), () => _forceCloseApp('com.android.settings'));
 
       if (_lastTamperingLog == null ||
           now.difference(_lastTamperingLog!) > _redirectCooldown) {
@@ -231,6 +238,17 @@ class BypassDetectionService {
           silentLog:   true,
         );
       }
+    }
+  }
+
+  // ── Force-close a package via ActivityManager.killBackgroundProcesses ────
+  // Redirect to home first so the target app is in the background, then kill.
+  Future<void> _forceCloseApp(String pkg) async {
+    try {
+      await _channel.invokeMethod('killPackage', {'package': pkg});
+      debugPrint('BYPASS: force-closed $pkg');
+    } catch (e) {
+      debugPrint('BYPASS: killPackage failed — $e');
     }
   }
 

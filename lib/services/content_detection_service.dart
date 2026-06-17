@@ -1,43 +1,149 @@
+// lib/services/content_detection_service.dart
+//
+// Decision logic:
+//   local prob < 0.20              -> SAFE  (no Gemini call)
+//   local prob > 0.70              -> TOXIC (no Gemini call, log directly)
+//   0.20 <= local prob <= 0.70     -> UNCERTAIN -> escalate to Gemini
+//
+// Model: assets/model_data.json (TF-IDF + Logistic Regression, 50k features)
+// Gemini: gemini-2.5-flash-lite via firebase_ai
+//
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:firebase_ai/firebase_ai.dart'; 
+import 'package:firebase_ai/firebase_ai.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_accessibility_service/flutter_accessibility_service.dart';
 import 'package:flutter_accessibility_service/accessibility_event.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/app_utils.dart';
 
+// ---------------------------------------------------------------------------
+// Pure-Dart TF-IDF + Logistic Regression classifier
+// ---------------------------------------------------------------------------
+
+class _LRClassifier {
+  final Map<String, int> vocab;
+  final List<double> idf;
+  final List<double> weights;
+  final double intercept;
+
+  _LRClassifier({
+    required this.vocab,
+    required this.idf,
+    required this.weights,
+    required this.intercept,
+  });
+
+  List<String> _ngrams(String text) {
+    final words = text
+        .toLowerCase()
+        .split(RegExp(r'\W+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    final out = <String>[];
+    for (int i = 0; i < words.length; i++) {
+      out.add(words[i]);
+      if (i + 1 < words.length) {
+        out.add('${words[i]} ${words[i + 1]}');
+      }
+    }
+    return out;
+  }
+
+  // Returns sigmoid probability of the text being toxic (0.0–1.0).
+  double score(String text) {
+    final tokens = _ngrams(text);
+    if (tokens.isEmpty) return 0.0;
+
+    final counts = <int, int>{};
+    for (final t in tokens) {
+      final idx = vocab[t];
+      if (idx != null) {
+        counts[idx] = (counts[idx] ?? 0) + 1;
+      }
+    }
+    if (counts.isEmpty) return 0.0;
+
+    final tfidf = <int, double>{};
+    for (final e in counts.entries) {
+      tfidf[e.key] = e.value * idf[e.key];
+    }
+
+    var norm = 0.0;
+    for (final v in tfidf.values) {
+      norm += v * v;
+    }
+    if (norm == 0.0) return 0.0;
+    final scale = 1.0 / sqrt(norm);
+
+    var logit = intercept;
+    for (final e in tfidf.entries) {
+      logit += e.value * scale * weights[e.key];
+    }
+
+    return 1.0 / (1.0 + exp(-logit));
+  }
+}
+
+_LRClassifier _parseModel(String jsonStr) {
+  final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+  final rawVocab = data['vocabulary'] as Map<String, dynamic>;
+  final vocab = rawVocab.map((k, v) => MapEntry(k, (v as num).toInt()));
+  final idf = (data['idf'] as List).map((v) => (v as num).toDouble()).toList();
+  final weights = (data['weights'] as List).map((v) => (v as num).toDouble()).toList();
+  return _LRClassifier(
+    vocab: vocab,
+    idf: idf,
+    weights: weights,
+    intercept: (data['intercept'] as num).toDouble(),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
 class ContentDetectionService {
-  // Use gemini-1.5-flash for the best balance of speed and cost
-  final _geminiModel = FirebaseAI.googleAI()
-      .generativeModel(model: 'gemini-2.5-flash-lite'); 
-  
   final _db = FirebaseFirestore.instance;
+
+  // Gemini model
+  final _geminiModel = FirebaseAI.googleAI()
+      .generativeModel(model: 'gemini-2.5-flash-lite');
+
   static StreamSubscription? _accessibilitySubscription;
   String? _deviceId;
+  String? _childName;
 
-  // ── Optimization State ────────────────────────────────────────────────
+  // Local classifier
+  _LRClassifier? _classifier;
+
+  // Confidence thresholds
+  static const double _safeThreshold  = 0.20;
+  static const double _toxicThreshold = 0.70;
+
+  // Optimization state
   final Map<String, DateTime> _lastProcessed = {};
   static const _debounceDuration = Duration(seconds: 5);
-  
-  String? _lastTextProcessed; 
+
+  String? _lastTextProcessed;
   DateTime? _lastTextTime;
 
   final Map<String, DateTime> _lastHarmfulTime = {};
   static const _harmfulCooldown = Duration(seconds: 30);
 
-  // ── Monitoring Config ─────────────────────────────────────────────────
   static const _monitoredPackages = {
     'com.whatsapp',
     'com.android.chrome',
     'com.instagram.android',
-    'com.ss.android.ugc.trill', // TikTok
+    'com.ss.android.ugc.trill',
     'org.telegram.messenger',
     'com.google.android.youtube',
     'com.facebook.katana',
-    'com.facebook.orca', // Messenger
+    'com.facebook.orca',
     'com.twitter.android',
     'x.com',
     'com.snapchat.android',
@@ -46,51 +152,88 @@ class ContentDetectionService {
   };
 
   static const _uiPatterns = [
-    'send', 'cancel', 'ok', 'back', 'next', 'reply', 'like', 'share', 
-    'follow', 'block', 'settings', 'menu', 'home', 'search', 'loading', 
+    'send', 'cancel', 'ok', 'back', 'next', 'reply', 'like', 'share',
+    'follow', 'block', 'settings', 'menu', 'home', 'search', 'loading',
     'refresh', 'tap to load', 'type a message', 'write a comment',
     'battery', 'wifi', 'bluetooth', 'yesterday', 'today', 'just now',
     'seen', 'delivered', 'online',
   ];
 
-  // Local "Red Flag" keywords (Malay + English)
-  static const _localTriggers = [
-    'babi', 'pukimak', 'anjing', 'bodoh', 'sial', 'pantat', 'kepala bapak',
-    'stupid', 'idiot', 'kill yourself', 'hate you', 'f*ck', 'retard', 'die'
-  ];
-
-  // ── Event Queue (Anti-Lag) ───────────────────────────────────────────
   final List<AccessibilityEvent> _eventList = [];
   bool _isProcessing = false;
+
+  // -------------------------------------------------------------------------
+  // Lifecycle
+  // -------------------------------------------------------------------------
 
   Future<void> start() async {
     if (_accessibilitySubscription != null) return;
 
-    // GUARD: Check permission before starting stream
-    final isEnabled = await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
+    final isEnabled =
+        await FlutterAccessibilityService.isAccessibilityPermissionEnabled();
     if (isEnabled != true) {
-      debugPrint('SAFECHILD: Accessibility not granted. Aborting stream start.');
+      debugPrint('SAFECHILD: Accessibility not granted. Aborting.');
       return;
     }
 
     final prefs = await SharedPreferences.getInstance();
     _deviceId = prefs.getString('device_id');
-
     if (_deviceId == null || _deviceId!.isEmpty) {
-      debugPrint('SAFECHILD: device_id not found. Cannot start logging.');
+      debugPrint('SAFECHILD: device_id not found. Cannot start.');
       return;
     }
 
+    try {
+      final doc = await _db.collection('child_devices').doc(_deviceId).get();
+      _childName = doc.data()?['full_name'] as String?;
+    } catch (_) {}
+
+    await _loadModel();
     await Future.delayed(const Duration(seconds: 2));
 
-    // Listen to the system stream and pipe it into our sequential internal queue
-    _accessibilitySubscription = FlutterAccessibilityService.accessStream.listen(
+    _accessibilitySubscription =
+        FlutterAccessibilityService.accessStream.listen(
       _onAccessibilityEvent,
-      onError: (e) => debugPrint('SAFECHILD: stream error — $e'),
+      onError: (e) => debugPrint('SAFECHILD: stream error -- $e'),
     );
 
-    debugPrint('SAFECHILD: service started for $_deviceId ✓');
+    debugPrint('SAFECHILD: started for $_deviceId '
+        '(classifier=${_classifier != null ? "ready" : "FAILED"})');
   }
+
+  Future<void> stop() async {
+    try {
+      await _accessibilitySubscription?.cancel();
+    } catch (e) {
+      debugPrint('SAFECHILD: stop error -- $e');
+    } finally {
+      _accessibilitySubscription = null;
+      _eventList.clear();
+      _classifier = null;
+      debugPrint('SAFECHILD: service stopped.');
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Model loading
+  // -------------------------------------------------------------------------
+
+  Future<void> _loadModel() async {
+    debugPrint('SAFECHILD: loading model_data.json...');
+    try {
+      final jsonStr = await rootBundle.loadString('assets/model_data.json');
+      _classifier = await compute(_parseModel, jsonStr);
+      debugPrint('SAFECHILD: classifier ready '
+          '(vocab=${_classifier!.vocab.length})');
+    } catch (e, st) {
+      _classifier = null;
+      debugPrint('SAFECHILD: MODEL LOAD FAILED: $e\n$st');
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Event queue
+  // -------------------------------------------------------------------------
 
   void _onAccessibilityEvent(AccessibilityEvent event) {
     _eventList.add(event);
@@ -100,83 +243,56 @@ class ContentDetectionService {
   Future<void> _processQueue() async {
     if (_isProcessing) return;
     _isProcessing = true;
-
     while (_eventList.isNotEmpty) {
       final event = _eventList.removeAt(0);
-      
-      // Yield to UI thread immediately to prevent skipped frames (Choreographer lag)
       await Future.delayed(Duration.zero);
-      
       await _handleQueuedEvent(event);
     }
-
     _isProcessing = false;
   }
 
-  Future<void> stop() async {
-    try {
-      if (_accessibilitySubscription != null) {
-        await _accessibilitySubscription?.cancel();
-      }
-    } catch (e) {
-      debugPrint('SAFECHILD: Warning - Accessibility stream de-activation error: $e');
-    } finally {
-      _accessibilitySubscription = null;
-      _eventList.clear();
-      debugPrint('SAFECHILD: service stopped.');
-    }
-  }
-
-  // ─────────────────────────────────────────────────────────────────────
-  // Async Event Handler
-  // ─────────────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------------------
+  // Event handler
+  // -------------------------------------------------------------------------
 
   Future<void> _handleQueuedEvent(AccessibilityEvent event) async {
     final sourceApp = event.packageName ?? 'unknown';
-
-    // 1. App Whitelist (Fast check on main isolate)
     if (!_monitoredPackages.any((pkg) => sourceApp.contains(pkg))) return;
 
-    // 2. Extract and Clean Text (Heavy work)
-    // We run this inside a Future to avoid blocking the UI frame
     final rawText = await Future(() => _extractTextFromEvent(event));
-
     if (rawText == null || rawText.isEmpty) return;
-
-    // 3. UI Label Filter (Skip "Send", "Cancel", etc.)
     if (_isUIText(rawText)) return;
 
-    // 4. Deduplication (Skip identical events from scrolling)
     final now = DateTime.now();
     if (_lastTextProcessed == rawText &&
         _lastTextTime != null &&
         now.difference(_lastTextTime!) < const Duration(seconds: 3)) {
       return;
     }
-
-    // 5. App Debounce
     final lastTime = _lastProcessed[sourceApp];
     if (lastTime != null && now.difference(lastTime) < _debounceDuration) {
       return;
     }
 
-    // Update tracking state
     _lastProcessed[sourceApp] = now;
     _lastTextProcessed = rawText;
     _lastTextTime = now;
 
-    debugPrint('SAFECHILD: event from $sourceApp → "$rawText"');
-
+    debugPrint('SAFECHILD: event from $sourceApp -> "$rawText"');
     await _processText(rawText, sourceApp);
   }
 
+  // -------------------------------------------------------------------------
+  // Text extraction
+  // -------------------------------------------------------------------------
+
   String? _extractTextFromEvent(AccessibilityEvent event) {
     String? rawText;
-    if (event.text != null && event.text != 'null' && event.text!.trim().isNotEmpty) {
+    if (event.text != null &&
+        event.text != 'null' &&
+        event.text!.trim().isNotEmpty) {
       rawText = _cleanText(event.text!);
     }
-
-    // Fallback to subNodes (common in list views/chats)
     if ((rawText == null || rawText.isEmpty) && event.subNodes != null) {
       final subTexts = event.subNodes!
           .where((n) => n.text != null && n.text != 'null')
@@ -190,46 +306,54 @@ class ContentDetectionService {
 
   bool _isUIText(String text) {
     final lower = text.toLowerCase().trim();
-    // Filter out patterns and very short strings (noise)
-    return _uiPatterns.any((p) => lower == p || lower.length < 2);
+    return lower.length < 2 || _uiPatterns.any((p) => lower == p);
   }
 
-
   String _cleanText(String raw) {
-    // Robust extraction from Android node dumps
     final mTextMatches = RegExp(r'mText:\s*([^,}]+)')
         .allMatches(raw)
         .map((m) => m.group(1)?.trim() ?? '')
         .where((t) => t.isNotEmpty)
         .toList();
-
     if (mTextMatches.isNotEmpty) return mTextMatches.join(' ');
-
-    // Clean brackets and extra whitespace
-    return raw.replaceAll(RegExp(r'\[.*?\]'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
+    return raw
+        .replaceAll(RegExp(r'\[.*?\]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // Pipeline
-  // ─────────────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------------------
+  // Hybrid classification pipeline
+  // -------------------------------------------------------------------------
 
   Future<void> _processText(String rawText, String sourceApp) async {
     final cleaned = _preprocess(rawText);
     if (cleaned == null || _shouldIgnoreMessage(cleaned)) return;
 
-    debugPrint('SAFECHILD: processing "$cleaned" from $sourceApp');
-
-    // 6. Local Keyword Pre-Filter
-    bool hasLocalTrigger = _localTriggers.any((word) => cleaned.contains(word));
-    
-    // Efficiency rule: Only AI-check if it has keywords OR is long enough to be a sentence
-    if (!hasLocalTrigger && cleaned.split(' ').length < 4) {
-      return; 
+    if (_classifier == null) {
+      debugPrint('SAFECHILD: classifier not ready -- skipping');
+      return;
     }
 
-    final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.contains(ConnectivityResult.none)) return;
+    final localProb = _classifier!.score(cleaned);
 
+    debugPrint('SAFECHILD: local prob=${localProb.toStringAsFixed(3)} '
+        'for "$cleaned"');
+
+    if (localProb < _safeThreshold) {
+      debugPrint('SAFECHILD: SAFE (below $_safeThreshold) -- skipped');
+      return;
+    }
+
+    if (localProb > _toxicThreshold) {
+      debugPrint('SAFECHILD: TOXIC (above $_toxicThreshold) -- logging');
+      _handleHarmful(localProb, 'local_lr', sourceApp, cleaned);
+      return;
+    }
+
+    // Uncertain zone — send to Gemini
+    debugPrint('SAFECHILD: UNCERTAIN (${localProb.toStringAsFixed(3)}) '
+        '-- send to Gemini');
     await _classifyWithGemini(cleaned, sourceApp);
   }
 
@@ -247,11 +371,17 @@ class ContentDetectionService {
     return false;
   }
 
-  // ─────────────────────────────────────────────────────────────────────
-  // AI Classification
-  // ─────────────────────────────────────────────────────────────────────
+  // -------------------------------------------------------------------------
+  // Gemini escalation 
+  // -------------------------------------------------------------------------
 
   Future<void> _classifyWithGemini(String text, String sourceApp) async {
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.contains(ConnectivityResult.none)) {
+      debugPrint('SAFECHILD: no connectivity -- Gemini skipped');
+      return;
+    }
+
     debugPrint('SAFECHILD: calling Gemini for "$text"');
     try {
       final prompt = '''
@@ -268,64 +398,74 @@ Return ONLY JSON:
 Text: "$text"
 ''';
 
-      final response = await _geminiModel.generateContent([Content.text(prompt)]);
+      final response =
+          await _geminiModel.generateContent([Content.text(prompt)]);
       final result = response.text;
 
-      debugPrint('SAFECHILD: gemini response = $result');
+      debugPrint('SAFECHILD: Gemini response = $result');
 
       if (result != null) {
-        _parseAndHandle(result, sourceApp, rawText: text);
-      } else {
-        debugPrint('SAFECHILD: gemini returned empty response');
+        _parseGeminiResponse(result, sourceApp, rawText: text);
       }
     } catch (e) {
-      debugPrint('SAFECHILD: Gemini error — $e');
+      debugPrint('SAFECHILD: Gemini error -- $e');
     }
   }
 
-  void _parseAndHandle(String jsonText, String sourceApp, {required String rawText}) {
+  void _parseGeminiResponse(
+    String jsonText,
+    String sourceApp, {
+    required String rawText,
+  }) {
     try {
-      final cleanedJson = jsonText.replaceAll('```json', '').replaceAll('```', '').trim();
-      final map = jsonDecode(cleanedJson) as Map<String, dynamic>;
-      
-      final category = map['category'] ?? 'safe';
-      final confidence = (map['confidence'] as num?)?.toDouble() ?? 0.0;
-      final snippet = map['snippet'] ?? '';
+      final cleaned =
+          jsonText.replaceAll('```json', '').replaceAll('```', '').trim();
+      final map = jsonDecode(cleaned) as Map<String, dynamic>;
 
-      debugPrint('SAFECHILD: category=$category confidence=$confidence snippet="$snippet"');
+      final category   = map['category'] as String? ?? 'safe';
+      final confidence = (map['confidence'] as num?)?.toDouble() ?? 0.0;
+      final snippet    = map['snippet'] as String? ?? '';
+
+      debugPrint('SAFECHILD: Gemini -> category=$category '
+          'confidence=$confidence snippet="$snippet"');
 
       if (category == 'toxic' && confidence >= 0.65) {
-        _handleHarmful(category, confidence, sourceApp, snippet.toString().isNotEmpty ? snippet : rawText);
+        _handleHarmful(
+          confidence,
+          'gemini',
+          sourceApp,
+          snippet.isNotEmpty ? snippet : rawText,
+        );
       } else {
-        debugPrint('SAFECHILD: safe or low confidence — not logged');
+        debugPrint('SAFECHILD: Gemini says safe or low confidence -- skipped');
       }
     } catch (e) {
-      debugPrint('SAFECHILD: Parse error — $e');
+      debugPrint('SAFECHILD: Gemini parse error -- $e');
     }
   }
 
-  void _handleHarmful(String category, double conf, String app, String content) {
+  // -------------------------------------------------------------------------
+  // Incident handling
+  // -------------------------------------------------------------------------
+
+  void _handleHarmful(
+      double prob, String detector, String app, String content) {
     final lastHarmful = _lastHarmfulTime[app];
-    if (lastHarmful != null && DateTime.now().difference(lastHarmful) < _harmfulCooldown) {
+    if (lastHarmful != null &&
+        DateTime.now().difference(lastHarmful) < _harmfulCooldown) {
       return;
     }
-
     _lastHarmfulTime[app] = DateTime.now();
-    
     _logIncident(
-      summary: 'Toxic content in ${AppUtils.getFriendlyAppName(app)}',
+      summary: '[${_childName ?? 'Child'}] Toxic content in ${AppUtils.getFriendlyAppName(app)}',
       description: content,
       source: app,
-      confidence: conf,
-      category: category,
-      alert: conf >= 0.80,
+      confidence: prob,
+      category: 'toxic',
+      alert: prob >= 0.80,
+      detector: detector,
     );
   }
-
-  // ─────────────────────────────────────────────────────────────────────
-  // Helpers
-  // ─────────────────────────────────────────────────────────────────────
-
 
   Future<void> _logIncident({
     required String summary,
@@ -334,6 +474,7 @@ Text: "$text"
     required double confidence,
     required String category,
     required bool alert,
+    required String detector,
   }) async {
     if (_deviceId == null) return;
     try {
@@ -347,10 +488,11 @@ Text: "$text"
         'detected_at': FieldValue.serverTimestamp(),
         'is_alert_send': alert,
         'is_reviewed': false,
+        'detector': 'hybrid_$detector',
       });
-      debugPrint('SAFECHILD: Incident logged to Firestore ✓');
+      debugPrint('SAFECHILD: Incident logged (via $detector)');
     } catch (e) {
-      debugPrint('SAFECHILD: Firestore error — $e');
+      debugPrint('SAFECHILD: Firestore error -- $e');
     }
   }
 }

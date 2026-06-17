@@ -1,5 +1,6 @@
 package com.safechild.safechild
 
+import android.app.ActivityManager
 import android.app.AppOpsManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -38,6 +39,14 @@ class MainActivity : FlutterActivity() {
                     val startMs = call.argument<Long>("startMs") ?: 0L
                     val endMs = call.argument<Long>("endMs") ?: System.currentTimeMillis()
                     result.success(getUsageStats(startMs, endMs))
+                }
+                "killPackage" -> {
+                    val pkg = call.argument<String>("package") ?: ""
+                    if (pkg.isNotEmpty()) {
+                        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                        am.killBackgroundProcesses(pkg)
+                    }
+                    result.success(null)
                 }
                 else -> {
                     result.notImplemented()

@@ -73,118 +73,90 @@ class _DeviceLockScreenState extends State<DeviceLockScreen>
     int selectedMinutes = 15;
     _requestDialogOpen = true;
 
-    showGeneralDialog<void>(
+    showDialog<void>(
       context: context,
       barrierDismissible: true,
-      barrierLabel: '',
-      barrierColor: Colors.black54,
-      transitionDuration: const Duration(milliseconds: 160),
-      // Plain fade — no scale/spring bounce that causes a brief layout overflow
-      transitionBuilder: (ctx, anim, _, child) =>
-          FadeTransition(opacity: CurvedAnimation(parent: anim, curve: Curves.easeOut), child: child),
-      pageBuilder: (ctx, anim1, anim2) => StatefulBuilder(
-        builder: (dialogContext, setDialogState) {
-          // Re-reads keyboard height every rebuild so the card shifts up cleanly
-          final keyboardInset = MediaQuery.viewInsetsOf(dialogContext).bottom;
-          return Dialog(
-            // Upper-centre — leaves room below so the keyboard never pushes it off-screen
-            alignment: const Alignment(0, -0.45),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            insetPadding: EdgeInsets.fromLTRB(24, 24, 24, keyboardInset + 16),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setDs) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text('Request Extra Time',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+          // Content only has TextField + slider — no buttons here.
+          // AlertDialog wraps content in IntrinsicWidth (w=Infinity), so any
+          // ElevatedButton placed here crashes layout. Buttons go in actions instead.
+          contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: 'Reason',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                maxLines: 1,
+                textInputAction: TextInputAction.done,
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // ── Title row ──
-                  const Text(
-                    'Request Extra Time',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-
-                  // ── Reason field (single line, compact) ──
-                  TextField(
-                    controller: reasonController,
-                    decoration: const InputDecoration(
-                      labelText: 'Reason',
-                      hintText: 'e.g. Finishing homework…',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    ),
-                    maxLines: 1,
-                    textInputAction: TextInputAction.done,
-                  ),
-                  const SizedBox(height: 14),
-
-                  // ── Duration row ──
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Duration',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                      Text(
-                        '$selectedMinutes min',
-                        style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary),
-                      ),
-                    ],
-                  ),
-                  Slider(
-                    value: selectedMinutes.toDouble(),
-                    min: 1,
-                    max: 60,
-                    divisions: 59,
-                    activeColor: AppColors.primary,
-                    label: '$selectedMinutes min',
-                    onChanged: (v) =>
-                        setDialogState(() => selectedMinutes = v.round()),
-                  ),
-
-                  // ── Buttons ──
-                  const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(dialogContext).pop(),
-                        child: const Text('Cancel',
-                            style: TextStyle(color: Colors.grey)),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                        ),
-                        onPressed: () {
-                          final reason = reasonController.text.trim();
-                          if (reason.isEmpty) {
-                            ScaffoldMessenger.of(dialogContext).showSnackBar(
-                              const SnackBar(
-                                  content: Text('Please enter a reason first!')),
-                            );
-                            return;
-                          }
-                          Navigator.of(dialogContext).pop();
-                          _requestTime(selectedMinutes, reason);
-                        },
-                        child: const Text('Send Request'),
-                      ),
-                    ],
-                  ),
+                  const Text('Duration',
+                      style: TextStyle(fontSize: 13)),
+                  Text('$selectedMinutes min',
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary)),
                 ],
               ),
+              Slider(
+                value: selectedMinutes.toDouble(),
+                min: 1, max: 60, divisions: 59,
+                activeColor: AppColors.primary,
+                label: '$selectedMinutes min',
+                onChanged: (v) => setDs(() => selectedMinutes = v.round()),
+              ),
+            ],
+          ),
+          // actions are placed in OverflowBar (finite width) — safe for ElevatedButton.
+          // Expanded divides the finite width equally between the two buttons.
+          actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Cancel',
+                        style: TextStyle(color: Colors.grey)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                    onPressed: () {
+                      final reason = reasonController.text.trim();
+                      if (reason.isEmpty) return;
+                      Navigator.pop(ctx);
+                      _requestTime(selectedMinutes, reason);
+                    },
+                    child: const Text('Send'),
+                  ),
+                ),
+              ],
             ),
-          );
-        },
+          ],
+        ),
       ),
     ).whenComplete(() {
       if (mounted) _requestDialogOpen = false;

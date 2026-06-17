@@ -7,8 +7,7 @@ import 'utils/app_theme.dart';
 import 'firebase_options.dart';
 
 // Top-level FCM handler — runs in a separate isolate when the app is
-// backgrounded or killed. Android delivers high-priority FCM data messages
-// even in Doze mode, so this is the fastest path when Firestore is throttled.
+// backgrounded or killed. 
 @pragma('vm:entry-point')
 Future<void> _onFcmBackground(RemoteMessage message) async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);

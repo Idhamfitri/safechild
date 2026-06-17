@@ -24,11 +24,6 @@ String _fmtMinutes(int m) {
   return '${h}h ${min}m';
 }
 
-String _fmtMinutesShort(int m) {
-  if (m <= 0) return '0';
-  if (m < 60) return '${m}m';
-  return '${m ~/ 60}h';
-}
 
 // ── Section Title ─────────────────────────────────────────────────────────
 
@@ -707,12 +702,8 @@ class WeeklyChart extends StatelessWidget {
           return const Center(child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()));
         }
         
-        final days = (snap.data ?? []).reversed.toList();
+        final days = snap.data ?? [];
         final totalMin = days.fold<int>(0, (s, d) => s + ((d['total_minutes'] as num?)?.toInt() ?? 0));
-        final maxDay   = days.fold<double>(1.0, (m, d) {
-          final v = ((d['total_minutes'] as num?)?.toDouble() ?? 0);
-          return v > m ? v : m;
-        });
 
         if (totalMin == 0) return _emptyChart('No usage data for last 7 days');
 
@@ -731,7 +722,7 @@ class WeeklyChart extends StatelessWidget {
             child: LineChart(
               LineChartData(
                 minX: 0, maxX: (days.length - 1).toDouble().clamp(1, 7),
-                minY: 0, maxY: maxDay * 1.2,
+                minY: 0, maxY: 1440,
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipItems: (touchedSpots) {
@@ -770,10 +761,14 @@ class WeeklyChart extends StatelessWidget {
                     sideTitles: SideTitles(
                       showTitles: true,
                       reservedSize: 36,
-                      getTitlesWidget: (value, _) => Text(
-                        _fmtMinutesShort(value.toInt()),
-                        style: const TextStyle(fontSize: 9, color: AppColors.textSub),
-                      ),
+                      interval: 360, // every 6 hours
+                      getTitlesWidget: (value, _) {
+                        final h = (value / 60).round();
+                        return Text(
+                          h == 0 ? '0' : '${h}h',
+                          style: const TextStyle(fontSize: 9, color: AppColors.textSub),
+                        );
+                      },
                     ),
                   ),
                   topTitles:   const AxisTitles(sideTitles: SideTitles(showTitles: false)),
