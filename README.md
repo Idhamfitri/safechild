@@ -51,7 +51,7 @@ This architecture maintains unmatched accuracy across **English, Malay, and Mang
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com
+   git clone https://github.com/Idhamfitri/safechild.git
    cd safechild
    ```
 
