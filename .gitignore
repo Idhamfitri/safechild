@@ -43,3 +43,11 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Firebase / Google Cloud private credentials
+**/serviceAccountKey.json
+
+# Environment secrets
+.env
+.env.*
+!.env.example
