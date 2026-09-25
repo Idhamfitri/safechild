@@ -69,8 +69,8 @@ This architecture maintains unmatched accuracy across **English, Malay, and Mang
    flutter run
    ```practical solution for keeping children safe online.
 
-<img width="1173" height="660" alt="Screenshot 2026-06-06 124322" src="https://github.com/user-attachments/assets/c18be901-94a4-4c15-863a-d6dc2aff994a" />
 <img width="955" height="532" alt="Screenshot 2026-06-06 121211" src="https://github.com/user-attachments/assets/0bc353ce-e092-4235-8cf4-5b43f3281da3" />
+<img width="1173" height="660" alt="Screenshot 2026-06-06 124322" src="https://github.com/user-attachments/assets/c18be901-94a4-4c15-863a-d6dc2aff994a" />
 <img width="1169" height="608" alt="Screenshot 2026-06-06 123407" src="https://github.com/user-attachments/assets/21cc7a67-eb97-41ef-a831-4b61b0d293d4" />
 <img width="1169" height="654" alt="Screenshot 2026-06-06 123433" src="https://github.com/user-attachments/assets/ca7e2b9b-8db5-42e4-8c47-2566b626d804" />
 <img width="1169" height="622" alt="Screenshot 2026-06-06 123648" src="https://github.com/user-attachments/assets/b342dac8-e149-4d95-8d3b-730d4f1e3224" />
