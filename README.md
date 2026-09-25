@@ -1,16 +1,72 @@
 # safechild
 
-A new Flutter project.
+A cutting-edge, hybrid parental control application built with Flutter to protect children in Malaysia from cyberbullying and harmful social media content.
 
-## What Is This Project About?
+[![Watch SafeChild Demo Video](https://youtube.com)](https://youtu.be/Cg7P7EzuDNQ)
 
-SafeChild is an Android parental control application that helps parents in Malaysia protect their children from cyberbullying and harmful content on social media. Unlike basic parental control tools, SafeChild can read what children actually type and receive across apps like WhatsApp, Instagram, TikTok, and Telegram using the Android Accessibility Service. It uses a hybrid two-stage detection approach. Text is first analysed on the device using a traditional Machine Learning classifier, and only unclear results are passes to Gemini AI in the cloud for a deeper check. This keeps API costs low while maintaining strong detection accuracy for English, Malay, and Manglish content.
+---
 
-The application also prevents children from uninstalling or disabling it by detecting system settings access and blocking it using Android Device Policy Manager. When harmful content or a bypass attempt is detected, the parent receives an instant push notification through Firebase Cloud Messaging, triggered automatically by Firebase Cloud Functions without needing a dedicated server. Additional features include screen time scheduling, remote device locking, and a simple pairing code system to link parent and child accounts. Built using Flutter, Firebase, AndroidAPI and Gemini AI, SafeChild provides Malaysian families with an affordable and practical solution for keeping children safe online.
+## 📌 Project Overview
 
+**SafeChild** is an advanced Android parental control solution designed specifically for the Malaysian cultural and linguistic landscape. Unlike basic content filters, SafeChild actively monitors on-screen text and inputs across popular applications—including **WhatsApp, Instagram, TikTok, and Telegram**—by leveraging the Android Accessibility Service.
 
+### 🧠 Hybrid Multi-Stage Detection
+To ensure enterprise-grade accuracy without skyrocketing infrastructure costs, SafeChild features a unique two-stage analysis pipeline:
+1. **On-Device Machine Learning:** Local classifiers instantly screen text for immediate red flags.
+2. **Cloud-Based Gemini AI:** Ambigious or highly nuanced text is passed to the cloud for deeper contextual analysis. 
 
+This architecture maintains unmatched accuracy across **English, Malay, and Manglish** (Malaysian English) content while keeping API overhead exceptionally low.
 
+---
+
+## ✨ Core Features
+
+* **Advanced Cross-App Monitoring:** Tracks incoming and outgoing text across major social platforms via Android Accessibility Service.
+* **Tamper-Proof Protection:** Utilizes the Android Device Policy Manager to block unauthorized access to system settings, preventing children from disabling or uninstalling the app.
+* **Serverless Alerts:** Instantly routes push notifications to parents via **Firebase Cloud Functions** and **Firebase Cloud Messaging (FCM)** without requiring a dedicated backend server.
+* **Device Control Tools:** Seamless screen time scheduling and remote device locking capabilities.
+* **Effortless Setup:** Simple, secure pairing-code system to instantly link parent and child devices.
+
+---
+
+## 🛠️ Built With
+
+* **Frontend Framework:** Flutter (Dart)
+* **Cloud Infrastructure:** Firebase (Cloud Functions, Cloud Messaging, Firestore)
+* **Intelligence Engines:** Android Native ML Classifiers & Gemini AI API
+* **OS Integrations:** Android API (Accessibility Service, Device Policy Manager)
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+* Flutter SDK (Latest Stable Version)
+* Android Studio / Android SDK (Target API 30+)
+* A Firebase Project setup with Cloud Functions enabled
+* Google Gemini API Key
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com
+   cd safechild
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   flutter pub get
+   ```
+
+3. **Configure Environment:**
+   * Add your `google-services.json` to the `android/app/` directory.
+   * Add your Gemini API key to your environment variables or local configuration file.
+
+4. **Run the application:**
+   ```bash
+   flutter run
+   ```practical solution for keeping children safe online.
 
 
 <img width="955" height="532" alt="Screenshot 2026-06-06 121211" src="https://github.com/user-attachments/assets/0bc353ce-e092-4235-8cf4-5b43f3281da3" />
